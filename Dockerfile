@@ -4,7 +4,11 @@ WORKDIR /app
 
 COPY . .
 
-RUN apt update && apt install -y aria2 ffmpeg && \
-    pip install --no-cache-dir -r requirements.txt
+RUN apt update && apt install -y \
+    aria2 \
+    qbittorrent-nox \
+    ffmpeg \
+    && ln -s /usr/bin/qbittorrent-nox /usr/bin/stormtorrent \
+    && pip install --no-cache-dir -r requirements.txt
 
 CMD ["python3", "-m", "bot"]
