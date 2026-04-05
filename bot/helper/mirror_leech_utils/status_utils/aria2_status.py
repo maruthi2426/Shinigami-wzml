@@ -45,9 +45,7 @@ class Aria2Status:
         return get_readable_file_size(int(self._download.get("completedLength", "0")))
 
     def speed(self):
-        return (
-            f"{get_readable_file_size(int(self._download.get("downloadSpeed", "0")))}/s"
-        )
+        return f"{get_readable_file_size(int(self._download.get('downloadSpeed', '0')))}/s"
 
     def name(self):
         return aria2_name(self._download)
@@ -91,9 +89,7 @@ class Aria2Status:
         return get_readable_file_size(int(self._download.get("uploadLength", "0")))
 
     def seed_speed(self):
-        return (
-            f"{get_readable_file_size(int(self._download.get("uploadSpeed", "0")))}/s"
-        )
+        return f"{get_readable_file_size(int(self._download.get('uploadSpeed', '0')))}/s"
 
     def ratio(self):
         try:
