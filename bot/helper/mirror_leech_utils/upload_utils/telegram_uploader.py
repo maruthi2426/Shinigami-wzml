@@ -108,67 +108,83 @@ class TelegramUploader:
         if self._thumb != "none" and not await aiopath.exists(self._thumb):
             self._thumb = None
 
-    async def _msg_to_reply(self):
-        if self._listener.up_dest:
-            msg_link = (
-                self._listener.message.link if self._listener.is_super_chat else ""
-            )
-            msg = f"""➲ <b><u>Leech Started :</u></b>
-┃
-┠ <b>User :</b> {self._listener.user.mention} ( #ID{self._listener.user_id} ){f"\n┠ <b>Message Link :</b> <a href='{msg_link}'>Click Here</a>" if msg_link else ""}
-┖ <b>Source :</b> <a href='{self._listener.source_url}'>Click Here</a>"""
-            try:
-                self._log_msg = await TgClient.bot.send_message(
-                    chat_id=self._listener.up_dest,
-                    text=msg,
-                    disable_web_page_preview=True,
-                    message_thread_id=self._listener.chat_thread_id,
-                    disable_notification=True,
-                )
-                self._sent_msg = self._log_msg
-                if self._user_session:
-                    self._sent_msg = await TgClient.user.get_messages(
-                        chat_id=self._sent_msg.chat.id,
-                        message_ids=self._sent_msg.id,
-                    )
-                else:
-                    self._is_private = self._sent_msg.chat.type.name == "PRIVATE"
-                if self._listener.leech_dest:
-                    try:
-                        leech_dest = self._listener.leech_dest
-                        if not isinstance(leech_dest, int):
-                            if "|" in str(leech_dest):
-                                leech_dest, _ = str(leech_dest).split("|", 1)
-                            if leech_dest.lstrip("-").isdigit():
-                                leech_dest = int(leech_dest)
-                        await self._log_msg.copy(chat_id=leech_dest)
-                    except Exception as e:
-                        if not self._listener.is_cancelled:
-                            LOGGER.error(
-                                f"Failed to copy 'Leech Started' message to {self._listener.leech_dest}: {e}"
-                            )
-                            await send_message(
-                                self._listener.user_id,
-                                f"Failed to send 'Leech Started' message to {self._listener.leech_dest}\n{e}",
-                            )
-            except Exception as e:
-                await self._listener.on_upload_error(str(e))
-                return False
+    # ONLY SHOWING FIXED PART — REST OF YOUR CODE REMAINS SAME
 
-        elif self._user_session:
-            self._sent_msg = await TgClient.user.get_messages(
-                chat_id=self._listener.message.chat.id, message_ids=self._listener.mid
+async def _msg_to_reply(self):
+    if self._listener.up_dest:
+        msg_link = (
+            self._listener.message.link if self._listener.is_super_chat else ""
+        )
+
+        msg_link_part = ""
+        if msg_link:
+            msg_link_part = f"\n┠ <b>Message Link :</b> <a href='{msg_link}'>Click Here</a>"
+
+        msg = (
+            f"➲ <b><u>Leech Started :</u></b>\n"
+            f"┃\n"
+            f"┠ <b>User :</b> {self._listener.user.mention} ( #ID{self._listener.user_id} )"
+            f"{msg_link_part}\n"
+            f"┖ <b>Source :</b> <a href='{self._listener.source_url}'>Click Here</a>"
+        )
+
+        try:
+            self._log_msg = await TgClient.bot.send_message(
+                chat_id=self._listener.up_dest,
+                text=msg,
+                disable_web_page_preview=True,
+                message_thread_id=self._listener.chat_thread_id,
+                disable_notification=True,
             )
-            if self._sent_msg is None:
-                self._sent_msg = await TgClient.user.send_message(
-                    chat_id=self._listener.message.chat.id,
-                    text="Deleted Cmd Message! Don't delete the cmd message again!",
-                    disable_web_page_preview=True,
-                    disable_notification=True,
+            self._sent_msg = self._log_msg
+
+            if self._user_session:
+                self._sent_msg = await TgClient.user.get_messages(
+                    chat_id=self._sent_msg.chat.id,
+                    message_ids=self._sent_msg.id,
                 )
-        else:
-            self._sent_msg = self._listener.message
-        return True
+            else:
+                self._is_private = self._sent_msg.chat.type.name == "PRIVATE"
+
+            if self._listener.leech_dest:
+                try:
+                    leech_dest = self._listener.leech_dest
+                    if not isinstance(leech_dest, int):
+                        if "|" in str(leech_dest):
+                            leech_dest, _ = str(leech_dest).split("|", 1)
+                        if leech_dest.lstrip("-").isdigit():
+                            leech_dest = int(leech_dest)
+                    await self._log_msg.copy(chat_id=leech_dest)
+                except Exception as e:
+                    if not self._listener.is_cancelled:
+                        LOGGER.error(
+                            f"Failed to copy 'Leech Started' message to {self._listener.leech_dest}: {e}"
+                        )
+                        await send_message(
+                            self._listener.user_id,
+                            f"Failed to send 'Leech Started' message to {self._listener.leech_dest}\n{e}",
+                        )
+
+        except Exception as e:
+            await self._listener.on_upload_error(str(e))
+            return False
+
+    elif self._user_session:
+        self._sent_msg = await TgClient.user.get_messages(
+            chat_id=self._listener.message.chat.id,
+            message_ids=self._listener.mid,
+        )
+        if self._sent_msg is None:
+            self._sent_msg = await TgClient.user.send_message(
+                chat_id=self._listener.message.chat.id,
+                text="Deleted Cmd Message! Don't delete the cmd message again!",
+                disable_web_page_preview=True,
+                disable_notification=True,
+            )
+    else:
+        self._sent_msg = self._listener.message
+
+    return True
 
     async def _prepare_file(self, pre_file_, dirpath):
         cap_file_ = file_ = pre_file_
