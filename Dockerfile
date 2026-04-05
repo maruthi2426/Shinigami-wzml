@@ -1,13 +1,10 @@
-FROM mysterysd/wzmlx:v3
+FROM python:3.10-slim
 
-WORKDIR /usr/src/app
-
-RUN chmod 777 /usr/src/app
-RUN uv venv --system-site-packages
-
-COPY requirements.txt .
-RUN uv pip install --no-cache-dir -r requirements.txt
+WORKDIR /app
 
 COPY . .
 
-CMD ["bash", "start.sh"]
+RUN apt update && apt install -y aria2 ffmpeg && \
+    pip install --no-cache-dir -r requirements.txt
+
+CMD ["python3", "-m", "bot"]
