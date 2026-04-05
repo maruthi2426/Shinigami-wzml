@@ -207,8 +207,9 @@ async def log_cb(_, query):
                 total += len(line) + 1
                 if total > 3500:
                     break
-
-            text = f"<b>Showing Last {len(res)} Lines from log.txt:</b> \n\n----------<b>START LOG</b>----------\n\n<blockquote expandable>{escape('\n'.join(reversed(res)))}</blockquote>\n----------<b>END LOG</b>----------"
+            logs = '\n'.join(reversed(res))
+            escaped_logs = escape(logs)
+            text = f"<b>Showing Last {len(res)} Lines from log.txt:</b> \n\n----------<b>START LOG</b>----------\n\n<blockquote expandable>{escaped_logs}</blockquote>\n----------<b>END LOG</b>----------"
 
             btn = ButtonMaker()
             btn.data_button("Close", f"log {user_id} close")
