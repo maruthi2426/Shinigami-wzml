@@ -9,11 +9,11 @@ RUN apt update && apt install -y \
     qbittorrent-nox \
     ffmpeg \
     curl \
+    libmagic1 \
     && ln -s /usr/bin/qbittorrent-nox /usr/bin/stormtorrent \
     && mkdir -p sabnzbd \
     && pip install --no-cache-dir -r requirements.txt
 
-# 🔥 START ARIA2 + BOT
 CMD aria2c \
     --enable-rpc \
     --rpc-listen-all=true \
