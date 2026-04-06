@@ -363,42 +363,86 @@ class SevenZ:
         self._percentage = "0%"
 
     async def extract(self, f_path, t_path, pswd):
-        cmd = [
-            "7z",
-            "x",
-            f"-p{pswd}",
-            f_path,
-            f"-o{t_path}",
-            "-aot",
-            "-xr!@PaxHeader",
-            "-bsp1",
-            "-bse1",
-            "-bb3",
-        ]
-        if not pswd:
-            del cmd[2]
-        if self._listener.is_cancelled:
-            return False
-        self._listener.subproc = await create_subprocess_exec(
-            *cmd,
-            stdout=PIPE,
-            stderr=PIPE,
-        )
-        await self._sevenz_progress()
-        _, stderr = await self._listener.subproc.communicate()
-        code = self._listener.subproc.returncode
-        if self._listener.is_cancelled:
-            return False
-        if code == -9:
-            self._listener.is_cancelled = True
-            return False
-        elif code != 0:
+        # Try 7z first if it exists and file is .7z/.rar
+        is_zip = f_path.lower().endswith('.zip')
+        should_try_7z = not is_zip
+        
+        if should_try_7z:
             try:
-                stderr = stderr.decode().strip()
-            except Exception:
-                stderr = "Unable to decode the error!"
-            LOGGER.error(f"{stderr}. Unable to extract archive!. Path: {f_path}")
-        return code
+                cmd = [
+                    "7z",
+                    "x",
+                    f"-p{pswd}",
+                    f_path,
+                    f"-o{t_path}",
+                    "-aot",
+                    "-xr!@PaxHeader",
+                    "-bsp1",
+                    "-bse1",
+                    "-bb3",
+                ]
+                if not pswd:
+                    del cmd[2]
+                if self._listener.is_cancelled:
+                    return False
+                self._listener.subproc = await create_subprocess_exec(
+                    *cmd,
+                    stdout=PIPE,
+                    stderr=PIPE,
+                )
+                await self._sevenz_progress()
+                _, stderr = await self._listener.subproc.communicate()
+                code = self._listener.subproc.returncode
+                if self._listener.is_cancelled:
+                    return False
+                if code == -9:
+                    self._listener.is_cancelled = True
+                    return False
+                elif code != 0:
+                    try:
+                        stderr = stderr.decode().strip()
+                    except Exception:
+                        stderr = "Unable to decode the error!"
+                    LOGGER.error(f"{stderr}. Unable to extract archive!. Path: {f_path}")
+                return code
+            except FileNotFoundError:
+                # 7z not found, fall through to zipfile
+                LOGGER.warning(f"7z command not found, attempting fallback extraction for: {f_path}")
+                pass
+        
+        # Fallback to Python's zipfile for .zip files or if 7z failed
+        if is_zip or should_try_7z:
+            try:
+                LOGGER.info(f"[FALLBACK] Using Python zipfile to extract: {f_path}")
+                
+                # Ensure target path exists
+                await aiomakedirs(t_path, exist_ok=True)
+                
+                # Extract using zipfile in a thread to avoid blocking
+                from concurrent.futures import ThreadPoolExecutor
+                
+                def extract_zip():
+                    try:
+                        with ZipFile(f_path, 'r') as zip_ref:
+                            zip_ref.extractall(path=t_path, pwd=pswd.encode() if pswd else None)
+                        return 0
+                    except Exception as e:
+                        LOGGER.error(f"Zipfile extraction failed: {str(e)}")
+                        return 1
+                
+                loop = __import__('asyncio').get_event_loop()
+                code = await loop.run_in_executor(ThreadPoolExecutor(), extract_zip)
+                
+                if code == 0:
+                    LOGGER.info(f"[SUCCESS] Extracted using zipfile: {f_path}")
+                
+                return code
+            except Exception as e:
+                LOGGER.error(f"Extraction failed (zipfile): {str(e)}")
+                return 1
+        
+        LOGGER.error(f"Unable to extract file: {f_path}")
+        return 1
 
     async def zip(self, dl_path, up_path, pswd):
         size = await get_path_size(dl_path)
