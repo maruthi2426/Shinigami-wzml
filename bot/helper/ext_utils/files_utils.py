@@ -363,54 +363,56 @@ class SevenZ:
         self._percentage = "0%"
 
     async def extract(self, f_path, t_path, pswd):
-        # Check if 7z is available
-        seven_z_available = which("7z") is not None
+        # Try 7z first if it exists and file is .7z/.rar
+        is_zip = f_path.lower().endswith('.zip')
+        should_try_7z = not is_zip
         
-        if seven_z_available:
-            # Use 7z if available
-            cmd = [
-                "7z",
-                "x",
-                f"-p{pswd}",
-                f_path,
-                f"-o{t_path}",
-                "-aot",
-                "-xr!@PaxHeader",
-                "-bsp1",
-                "-bse1",
-                "-bb3",
-            ]
-            if not pswd:
-                del cmd[2]
-            if self._listener.is_cancelled:
-                return False
-            self._listener.subproc = await create_subprocess_exec(
-                *cmd,
-                stdout=PIPE,
-                stderr=PIPE,
-            )
-            await self._sevenz_progress()
-            _, stderr = await self._listener.subproc.communicate()
-            code = self._listener.subproc.returncode
-            if self._listener.is_cancelled:
-                return False
-            if code == -9:
-                self._listener.is_cancelled = True
-                return False
-            elif code != 0:
-                try:
-                    stderr = stderr.decode().strip()
-                except Exception:
-                    stderr = "Unable to decode the error!"
-                LOGGER.error(f"{stderr}. Unable to extract archive!. Path: {f_path}")
-            return code
-        else:
-            # Fallback to Python's zipfile for .zip files
+        if should_try_7z:
             try:
-                if not f_path.lower().endswith('.zip'):
-                    LOGGER.error(f"7z not available and file is not .zip format. Unable to extract: {f_path}")
-                    return 1
-                
+                cmd = [
+                    "7z",
+                    "x",
+                    f"-p{pswd}",
+                    f_path,
+                    f"-o{t_path}",
+                    "-aot",
+                    "-xr!@PaxHeader",
+                    "-bsp1",
+                    "-bse1",
+                    "-bb3",
+                ]
+                if not pswd:
+                    del cmd[2]
+                if self._listener.is_cancelled:
+                    return False
+                self._listener.subproc = await create_subprocess_exec(
+                    *cmd,
+                    stdout=PIPE,
+                    stderr=PIPE,
+                )
+                await self._sevenz_progress()
+                _, stderr = await self._listener.subproc.communicate()
+                code = self._listener.subproc.returncode
+                if self._listener.is_cancelled:
+                    return False
+                if code == -9:
+                    self._listener.is_cancelled = True
+                    return False
+                elif code != 0:
+                    try:
+                        stderr = stderr.decode().strip()
+                    except Exception:
+                        stderr = "Unable to decode the error!"
+                    LOGGER.error(f"{stderr}. Unable to extract archive!. Path: {f_path}")
+                return code
+            except FileNotFoundError:
+                # 7z not found, fall through to zipfile
+                LOGGER.warning(f"7z command not found, attempting fallback extraction for: {f_path}")
+                pass
+        
+        # Fallback to Python's zipfile for .zip files or if 7z failed
+        if is_zip or should_try_7z:
+            try:
                 LOGGER.info(f"[FALLBACK] Using Python zipfile to extract: {f_path}")
                 
                 # Ensure target path exists
@@ -418,7 +420,6 @@ class SevenZ:
                 
                 # Extract using zipfile in a thread to avoid blocking
                 from concurrent.futures import ThreadPoolExecutor
-                import os
                 
                 def extract_zip():
                     try:
@@ -437,8 +438,11 @@ class SevenZ:
                 
                 return code
             except Exception as e:
-                LOGGER.error(f"Extraction failed (zipfile fallback error): {str(e)}")
+                LOGGER.error(f"Extraction failed (zipfile): {str(e)}")
                 return 1
+        
+        LOGGER.error(f"Unable to extract file: {f_path}")
+        return 1
 
     async def zip(self, dl_path, up_path, pswd):
         size = await get_path_size(dl_path)
