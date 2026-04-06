@@ -1,6 +1,7 @@
 from asyncio import create_subprocess_exec, create_subprocess_shell, sleep
 from importlib import import_module
 from os import environ, getenv, path as ospath
+import os
 
 from aiofiles import open as aiopen
 from aiofiles.os import makedirs, remove, path as aiopath
@@ -216,8 +217,18 @@ async def save_settings():
     if await database.db.settings.qbittorrent.find_one({"_id": TgClient.ID}) is None:
         await database.save_qbit_settings()
     if await database.db.settings.nzb.find_one({"_id": TgClient.ID}) is None:
-        async with aiopen("sabnzbd/SABnzbd.ini", "rb+") as pf:
+        path = "sabnzbd/SABnzbd.ini"
+
+        # 🔥 AUTO CREATE FILE IF MISSING
+        if not os.path.exists(path):
+            os.makedirs("sabnzbd", exist_ok=True)
+            with open(path, "w") as f:
+                f.write("")
+
+        # 🔥 NOW READ FILE SAFELY
+        async with aiopen(path, "rb+") as pf:
             nzb_conf = await pf.read()
+            
         await database.db.settings.nzb.update_one(
             {"_id": TgClient.ID}, {"$set": {"SABnzbd__ini": nzb_conf}}, upsert=True
         )
