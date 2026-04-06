@@ -5,6 +5,8 @@ from contextlib import suppress
 from psutil import disk_usage
 from os import path as ospath, readlink, walk
 from re import I, escape, search as re_search, split as re_split
+from zipfile import ZipFile
+from shutil import which
 
 from aiofiles.os import (
     listdir,
