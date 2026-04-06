@@ -406,7 +406,8 @@ def get_gdflix_data(url, proxy_list, max_retries=5):
                 # Prioritize first direct as main index_zip
                 if index_directs:
                     result["mirrors"]['index_zip'] = index_directs[list(index_directs.keys())[0]]
-                    print(f"[+] Index/Zip from zipdisk: {result["mirrors"]['index_zip'][:140]}...")
+                    zip_url = result["mirrors"]['index_zip'][:140]
+                    print(f"[+] Index/Zip from zipdisk: {zip_url}...")
                 # Add extras if any
                 result["mirrors"].update({k: v for k, v in index_directs.items() if k != list(index_directs.keys())[0]})
                 print(f"[+] Zipdisk parent (now index source): {zipdisk_url}")
