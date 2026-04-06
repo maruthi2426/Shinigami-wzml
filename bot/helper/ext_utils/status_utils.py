@@ -57,37 +57,43 @@ class EngineStatus:
         self.STATUS_UPHOSTER = "Uphoster"
 
 
-# 🔥 PREMIUM STATUS EMOJI MAP - Ultra Aesthetic & Modern
+# 🔥 ULTRA PREMIUM STATUS EMOJI MAP v2.0 - NEVER BEFORE SEEN AESTHETIC
+# Each emoji combo is hand-crafted for maximum visual impact + meaning
 STATUS_EMOJIS = {
-    MirrorStatus.STATUS_DOWNLOAD: "⬇️⚡",
-    MirrorStatus.STATUS_UPLOAD: "⬆️✨",
-    MirrorStatus.STATUS_CLONE: "♻️🔄",
-    MirrorStatus.STATUS_QUEUEDL: "⏳📥",
-    MirrorStatus.STATUS_QUEUEUP: "⏳📤",
-    MirrorStatus.STATUS_PAUSED: "⏸️❄️",
-    MirrorStatus.STATUS_ARCHIVE: "📦🔐",
-    MirrorStatus.STATUS_EXTRACT: "📤🔓",
-    MirrorStatus.STATUS_SPLIT: "✂️📑",
-    MirrorStatus.STATUS_CHECK: "🔍✅",
-    MirrorStatus.STATUS_SEED: "🌱🚀",
-    MirrorStatus.STATUS_SAMVID: "🎬📼",
-    MirrorStatus.STATUS_CONVERT: "🔄🧪",
-    MirrorStatus.STATUS_FFMPEG: "🎞️⚙️",
-    MirrorStatus.STATUS_YT: "📺🔥",
-    MirrorStatus.STATUS_METADATA: "📋✨",
+    MirrorStatus.STATUS_DOWNLOAD: "🚀⬇️⚡",
+    MirrorStatus.STATUS_UPLOAD: "✨⬆️🌟",
+    MirrorStatus.STATUS_CLONE: "♻️🔄💫",
+    MirrorStatus.STATUS_QUEUEDL: "⏳📥🔥",
+    MirrorStatus.STATUS_QUEUEUP: "⏳📤💎",
+    MirrorStatus.STATUS_PAUSED: "⏸️❄️🧊",
+    MirrorStatus.STATUS_ARCHIVE: "📦🔐🛡️",
+    MirrorStatus.STATUS_EXTRACT: "📤🔓✨",
+    MirrorStatus.STATUS_SPLIT: "✂️📑⚔️",
+    MirrorStatus.STATUS_CHECK: "🔍✅🧬",
+    MirrorStatus.STATUS_SEED: "🌱🚀💚",
+    MirrorStatus.STATUS_SAMVID: "🎬📼🔥",
+    MirrorStatus.STATUS_CONVERT: "🔄🧪🧬",
+    MirrorStatus.STATUS_FFMPEG: "🎞️⚙️🎥",
+    MirrorStatus.STATUS_YT: "📺🔥🎯",
+    MirrorStatus.STATUS_METADATA: "📋✨🧠",
 }
 
 
-# 🔥 PREMIUM PROGRESS BAR - 25 segments, gradient-style, ultra clean
+# 🔥 ULTRA PREMIUM PROGRESS BAR v2.0 - 30 segments, true gradient + glow effect
 def get_progress_bar_string(pct):
     try:
         pct_float = float(str(pct).strip("%"))
     except:
         pct_float = 0.0
     p = min(max(pct_float, 0), 100)
-    filled = int(round(p / 4))  # 25 blocks total (4% each)
-    bar = "█" * filled + "▓" * (max(0, filled - 18)) + "░" * (25 - filled)
-    return f"[{bar}] <b>{p:.1f}%</b>"
+    filled = int(round(p / (100 / 30)))  # 30 ultra-fine segments
+    # Gradient blocks: full → near-full → empty with premium Unicode
+    gradient = "█" * filled + "▓" * max(0, min(8, 30 - filled)) + "░" * (30 - filled)
+    # Add glowing percentage with sparkle if >95%
+    percent_str = f"<b>{p:.1f}%</b>"
+    if p >= 95:
+        percent_str = f"🌟<b>{p:.1f}%</b>🌟"
+    return f"<b>[</b>{gradient}<b>]</b> {percent_str}"
 
 
 STATUSES = {
@@ -172,7 +178,7 @@ def get_readable_time(seconds: int):
         if seconds >= period_seconds:
             period_value, seconds = divmod(seconds, period_seconds)
             result += f"{int(period_value)}{period_name}"
-    return result
+    return result or "0s"
 
 
 def get_raw_time(time_str: str) -> int:
@@ -215,24 +221,32 @@ def speed_string_to_bytes(size_text: str):
     return size
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 🔥 CORE PREMIUM MESSAGE BUILDER v2.0 - NEVER BEFORE SEEN IN ANY MIRROR BOT
+# Advanced card-style layout, dynamic separators, GID, subname, enhanced stats
+# ─────────────────────────────────────────────────────────────────────────────
 async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=1):
-    msg = ""
+    msg = "<b>🔥 ULTRA PREMIUM MIRROR STATUS v2.0 🔥</b>\n"
+    msg += "<i>Advanced • Aesthetic • Real-time</i>\n\n"
     button = None
+
     tasks = await get_specific_tasks(status, sid if is_user else None)
     STATUS_LIMIT = Config.STATUS_LIMIT
     tasks_no = len(tasks)
     pages = (max(tasks_no, 1) + STATUS_LIMIT - 1) // STATUS_LIMIT
 
+    # Smart pagination with wrap-around
     if page_no > pages:
         page_no = (page_no - 1) % pages + 1
         status_dict[sid]["page_no"] = page_no
     elif page_no < 1:
-        page_no = pages - (abs(page_no) % pages)
+        page_no = pages - (abs(page_no) % pages) + 1 if pages > 0 else 1
         status_dict[sid]["page_no"] = page_no
 
     start_position = (page_no - 1) * STATUS_LIMIT
+    displayed_tasks = tasks[start_position : STATUS_LIMIT + start_position]
 
-    for index, task in enumerate(tasks[start_position : STATUS_LIMIT + start_position], start=1):
+    for index, task in enumerate(displayed_tasks, start=1):
         if status != "All":
             tstatus = status
         elif iscoroutinefunction(task.status):
@@ -242,41 +256,44 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
 
         emoji = STATUS_EMOJIS.get(tstatus, "🔥")
         task_index = index + start_position
+        gid = task.gid()
 
-        # ──────── PREMIUM TASK HEADER ────────
-        msg += f"<b>{task_index}. {emoji} {tstatus}</b>\n"
+        # ──────── PREMIUM TASK CARD ────────
+        msg += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        msg += f"<b>{task_index}. {emoji} {tstatus.upper()}</b> <code>[{gid}]</code>\n"
         msg += f"📁 <b><i>{escape(task.name())}</i></b>\n"
 
         if task.listener.subname:
             msg += f"📝 <i>{escape(task.listener.subname)}</i>\n"
 
-        # User info + link
+        # User + Link
         user_mention = task.listener.message.from_user.mention(style='html')
         msg += f"👤 <b>Task By:</b> {user_mention} <code>(#{task.listener.message.from_user.id})</code>"
         if task.listener.is_super_chat:
-            msg += f" <a href='{task.listener.message.link}'>🔗 Link</a>"
+            msg += f" <a href='{task.listener.message.link}'>🔗 View Original</a>"
         msg += "\n"
 
         elapsed = time() - task.listener.message.date.timestamp()
 
-        # ──────── MAIN CONTENT - ULTRA PREMIUM DESIGN ────────
+        # ──────── DYNAMIC CONTENT SECTION (core advanced logic) ────────
         if tstatus not in [MirrorStatus.STATUS_SEED, MirrorStatus.STATUS_QUEUEUP] and task.listener.progress:
-            # Active task (DL/UP/Archive/etc.)
+            # ACTIVE TASK (Download / Upload / Process)
             progress = task.progress()
             bar = get_progress_bar_string(progress)
-            msg += f"\n{bar}\n"
+
+            msg += f"\n{bar}\n\n"
 
             subsize = ""
             count = ""
             if task.listener.subname:
                 subsize = f" / {get_readable_file_size(task.listener.subsize)}"
                 ac = len(task.listener.files_to_proceed)
-                count = f"({task.listener.proceed_count}/{ac or '?'})"
+                count = f" <b>({task.listener.proceed_count}/{ac or '?'})</b>"
 
             msg += f"📏 <b>Size:</b> <i>{task.size()}</i>\n"
-            msg += f"📦 <b>Processed:</b> <i>{task.processed_bytes()}{subsize}</i>{' ' + count if count else ''}\n"
+            msg += f"📦 <b>Processed:</b> <i>{task.processed_bytes()}{subsize}</i>{count}\n"
             msg += f"⚡ <b>Speed:</b> <i>{task.speed()}</i>\n"
-            msg += f"⏳ <b>ETA:</b> <i>{task.eta()}</i> • <b>Total:</b> <i>{get_readable_time(elapsed + get_raw_time(task.eta()))}</i>\n"
+            msg += f"⏳ <b>ETA:</b> <i>{task.eta()}</i> • <b>Total Time:</b> <i>{get_readable_time(elapsed + get_raw_time(task.eta()))}</i>\n"
             msg += f"⏰ <b>Elapsed:</b> <i>{get_readable_time(elapsed)}</i>\n"
 
             if tstatus == MirrorStatus.STATUS_DOWNLOAD and (task.listener.is_torrent or task.listener.is_qbit):
@@ -286,6 +303,7 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
                     pass
 
         elif tstatus == MirrorStatus.STATUS_SEED:
+            # SEEDING - Special premium layout
             msg += f"🌱 <b>Size:</b> <i>{task.size()}</i>\n"
             msg += f"⬆️ <b>Uploaded:</b> <i>{task.uploaded_bytes()}</i>\n"
             msg += f"⚡ <b>Speed:</b> <i>{task.seed_speed()}</i>\n"
@@ -293,49 +311,55 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
             msg += f"⏰ <b>Seeding Time:</b> <i>{task.seeding_time()}</i> • <b>Elapsed:</b> <i>{get_readable_time(elapsed)}</i>\n"
 
         else:
+            # QUEUED / PAUSED / STATIC
             msg += f"📏 <b>Size:</b> <i>{task.size()}</i>\n"
 
-        # Engine + Modes
+        # Engine & Mode - Always shown
         msg += f"🚀 <b>Engine:</b> <i>{task.engine}</i>\n"
         msg += f"🔄 <b>In Mode:</b> <i>{task.listener.mode[0]}</i> | <b>Out Mode:</b> <i>{task.listener.mode[1]}</i>\n"
 
-        # Cancel button (premium style)
+        # Cancel command (premium style)
         from ..telegram_helper.bot_commands import BotCommands
-        msg += f"❌ <b>Stop Task:</b> <code>/{BotCommands.CancelTaskCommand[1]}_{task.gid()}</code>\n\n"
+        msg += f"❌ <b>Stop Task:</b> <code>/{BotCommands.CancelTaskCommand[1]}_{gid}</code>\n\n"
 
-    # No tasks
-    if not msg.strip():
+    # No tasks case - ultra premium
+    if not displayed_tasks:
         if status == "All":
             return None, None
         else:
-            msg = f"🌟 <b>No Active {status} Tasks!</b>\n\n"
+            msg = f"🌟 <b>NO ACTIVE {status.upper()} TASKS!</b>\n\n"
+            msg += "✨ Bot is idle and ready for new mirrors!\n"
+            msg += "🔥 Start a task to see the magic happen...\n\n"
 
-    # ──────── PAGE INFO & BUTTONS ────────
+    # ──────── PAGE INFO & NAVIGATION ────────
+    if len(tasks) > STATUS_LIMIT:
+        msg += f"📑 <b>Page {page_no}/{pages}</b> | 📊 <b>{tasks_no} Tasks Total</b> | Step {page_step}\n"
+
+    # Buttons
     buttons = ButtonMaker()
     if not is_user:
         buttons.data_button("📜 Overview", f"status {sid} ov", position="header")
-
     if len(tasks) > STATUS_LIMIT:
-        msg += f"📑 <b>Page {page_no}/{pages}</b> | 📊 <b>{tasks_no} Tasks</b> | 🔢 Step {page_step}\n"
-        buttons.data_button("⬅️", f"status {sid} pre", position="header")
-        buttons.data_button("➡️", f"status {sid} nex", position="header")
+        buttons.data_button("⬅️ Prev", f"status {sid} pre", position="header")
+        buttons.data_button("➡️ Next", f"status {sid} nex", position="header")
         if tasks_no > 30:
             for i in [1, 2, 4, 6, 8, 10, 15]:
                 buttons.data_button(f"⏭️{i}", f"status {sid} ps {i}", position="footer")
-
     if status != "All" or tasks_no > 20:
         for label, status_value in STATUSES.items():
             if status_value != status:
                 buttons.data_button(label, f"status {sid} st {status_value}")
-
-    buttons.data_button("🔄 Refresh", f"status {sid} ref", position="header")
+    buttons.data_button("🔄 Refresh Now", f"status {sid} ref", position="header")
     button = buttons.build_menu(8)
 
-    # ──────── PREMIUM BOT STATS FOOTER ────────
+    # ──────── PREMIUM BOT STATS FOOTER v2.0 ────────
     free_space = get_readable_file_size(disk_usage(DOWNLOAD_DIR).free)
     free_pct = round(100 - disk_usage(DOWNLOAD_DIR).percent, 1)
-    msg += f"\n🔥 <b><u>Bot Status</u></b>\n"
-    msg += f"💻 <b>CPU:</b> {cpu_percent()}% | 🗄️ <b>Free:</b> {free_space} <i>[{free_pct}%]</i>\n"
-    msg += f"🧠 <b>RAM:</b> {virtual_memory().percent}% | ⏳ <b>Uptime:</b> {get_readable_time(time() - bot_start_time)}"
+    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    msg += f"🔥 <b><u>BOT LIVE STATS</u></b> 🔥\n"
+    msg += f"💻 <b>CPU:</b> {cpu_percent()}% | 🧠 <b>RAM:</b> {virtual_memory().percent}%\n"
+    msg += f"🗄️ <b>Free Storage:</b> {free_space} <i>[{free_pct}%]</i>\n"
+    msg += f"⏳ <b>Uptime:</b> {get_readable_time(time() - bot_start_time)}\n"
+    msg += f"<i>Powered by Ultra Premium Core • {time():.0f}</i>"
 
     return msg, button
