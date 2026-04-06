@@ -12,6 +12,10 @@ from urllib.parse import parse_qs, urlparse, quote
 from urllib3.util.retry import Retry
 from uuid import uuid4
 from base64 import b64decode, b64encode
+import sys
+from pathlib import Path
+import importlib.util
+import os
 
 from ....core.config_manager import Config
 from ...ext_utils.exceptions import DirectDownloadLinkException
@@ -19,16 +23,46 @@ from ...ext_utils.help_messages import PASSWORD_ERROR_MESSAGE
 from ...ext_utils.links_utils import is_share_link
 from ...ext_utils.status_utils import speed_string_to_bytes
 
-# Import new scrapers
-try:
-    from gdflix import get_gdflix_data
-except ImportError:
-    get_gdflix_data = None
+# Import scrapers using importlib for better reliability
+GDFLIX_AVAILABLE = False
+HUBCLOUD_AVAILABLE = False
+get_gdflix_data = None
+bypass_hubcloud = None
 
-try:
-    from hdhub_scraper import bypass_hubcloud
-except ImportError:
-    bypass_hubcloud = None
+# Get bot directory path
+bot_dir = str(Path(__file__).parent.parent.parent.parent)
+
+# Try to load gdflix scraper
+gdflix_path = os.path.join(bot_dir, 'gdflix.py')
+if os.path.exists(gdflix_path):
+    try:
+        spec = importlib.util.spec_from_file_location("gdflix", gdflix_path)
+        gdflix_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gdflix_module)
+        get_gdflix_data = gdflix_module.get_gdflix_data
+        GDFLIX_AVAILABLE = True
+        print(f"[INFO] GDFlix scraper loaded successfully from {gdflix_path}")
+    except Exception as e:
+        print(f"[ERROR] Failed to load GDFlix scraper: {str(e)}")
+        GDFLIX_AVAILABLE = False
+else:
+    print(f"[WARNING] GDFlix scraper not found at {gdflix_path}")
+
+# Try to load hdhub_scraper
+hdhub_path = os.path.join(bot_dir, 'hdhub_scraper.py')
+if os.path.exists(hdhub_path):
+    try:
+        spec = importlib.util.spec_from_file_location("hdhub_scraper", hdhub_path)
+        hdhub_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hdhub_module)
+        bypass_hubcloud = hdhub_module.bypass_hubcloud
+        HUBCLOUD_AVAILABLE = True
+        print(f"[INFO] HubCloud scraper loaded successfully from {hdhub_path}")
+    except Exception as e:
+        print(f"[ERROR] Failed to load HubCloud scraper: {str(e)}")
+        HUBCLOUD_AVAILABLE = False
+else:
+    print(f"[WARNING] HubCloud scraper not found at {hdhub_path}")
 
 # GoFile token cache to avoid rate limiting
 gofile_token_cache = None
@@ -40,8 +74,8 @@ user_agent = (
 # GDFlix and HubCloud Handler Functions
 def gdflix(link):
     """GDFlix direct link generator with instant DL priority"""
-    if not get_gdflix_data:
-        raise DirectDownloadLinkException("ERROR: GDFlix scraper not installed")
+    if not GDFLIX_AVAILABLE or not get_gdflix_data:
+        raise DirectDownloadLinkException("ERROR: GDFlix scraper module not loaded. Make sure gdflix.py exists in bot directory")
     try:
         data = get_gdflix_data(link, proxy_list=[])
         
@@ -81,8 +115,8 @@ def gdflix(link):
 
 def hubcloud_handler(link):
     """HubCloud direct link generator with FSL priority"""
-    if not bypass_hubcloud:
-        raise DirectDownloadLinkException("ERROR: HubCloud scraper not installed")
+    if not HUBCLOUD_AVAILABLE or not bypass_hubcloud:
+        raise DirectDownloadLinkException("ERROR: HubCloud scraper module not loaded. Make sure hdhub_scraper.py exists in bot directory")
     try:
         import requests as req_module
         session = req_module.Session()
