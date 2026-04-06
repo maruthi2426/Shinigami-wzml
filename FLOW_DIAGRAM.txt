@@ -1,0 +1,258 @@
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                   GDFLIX & HUBCLOUD - EXECUTION FLOW                           ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+
+ SCENARIO 1: USER SENDS GDFLIX LINK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      User Input
+         │
+         ├─ "/leech https://new16.gdflix.net/file/abc123"
+         │
+         ▼
+    direct_link_generator()
+         │
+         ├─ Extract domain: "new16.gdflix.net"
+         │
+         ├─ Check if "gdflix.net" in domain?
+         │  YES ✓
+         │
+         ▼
+    gdflix(link)
+         │
+         ├─ Check if get_gdflix_data module loaded?
+         │  YES ✓
+         │
+         ▼
+    get_gdflix_data(link, proxy_list=[])
+         │
+         ├─ Fetch landing page (HTTP GET)
+         │
+         ├─ Parse HTML with BeautifulSoup
+         │
+         ├─ Extract filename & filesize
+         │
+         ├─ Look for buttons:
+         │   ├─ "Instant DL" button
+         │   ├─ "Cloud R2" button
+         │   ├─ "PixelDrain" button
+         │   ├─ "Telegram" button
+         │   └─ "GoFile" button
+         │
+         ├─ Follow redirects (busycdn → Google Drive)
+         │
+         ├─ Extract all mirrors into JSON
+         │
+         ▼
+    Return mirrors dict
+         │
+         ├─ {
+         │   "instant": "https://googleusercontent.com/...",
+         │   "pixeldrain": "https://pixeldrain.dev/...",
+         │   "cloud_r2": "https://r2.dev/...",
+         │   "index_zip": "https://awscdn.rest/..."
+         │  }
+         │
+         ▼
+    gdflix() checks priorities
+         │
+         ├─ Is "instant" available?
+         │  YES ✓ → Return instant link ──┐
+         │  NO  → Continue               │
+         │                               │
+         ├─ Is "pixeldrain" available?  │
+         │  YES ✓ → Return pixeldrain ──┤
+         │  NO  → Continue              │
+         │                              │
+         ├─ Is "cloud_r2" available?    │
+         │  YES ✓ → Return cloud_r2 ───┤
+         │  NO  → Continue              │
+         │                              │
+         ├─ Return first available ─────┤
+         │                              │
+         ▼                              │
+    direct_link_generator() returns ◄──┘
+         │
+         ├─ "https://googleusercontent.com/uc?id=abc123..."
+         │
+         ▼
+    Bot receives link
+         │
+         ├─ Log: "Direct link found"
+         │
+         ▼
+    Start Aria2 Download
+         │
+         ├─ aria2c "https://googleusercontent.com/..."
+         │
+         ▼
+    ✓ Download complete!
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+ SCENARIO 2: USER SENDS HUBCLOUD LINK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      User Input
+         │
+         ├─ "/mirror https://hubcloud.foo/file/xyz789"
+         │
+         ▼
+    direct_link_generator()
+         │
+         ├─ Extract domain: "hubcloud.foo"
+         │
+         ├─ Check if domain in ["hubcloud.foo", "hubcloud.one", ...]?
+         │  YES ✓
+         │
+         ▼
+    hubcloud_handler(link)
+         │
+         ├─ Check if bypass_hubcloud module loaded?
+         │  YES ✓
+         │
+         ├─ Create requests.Session()
+         │
+         ▼
+    bypass_hubcloud(link, session)
+         │
+         ├─ Send bypass request to HubCloud
+         │
+         ├─ Parse response HTML
+         │
+         ├─ Look for download options:
+         │   ├─ FSL Server button
+         │   ├─ 10Gbps Server button
+         │   ├─ Pixeldrain button
+         │   └─ Other formats
+         │
+         ├─ Extract server URLs
+         │
+         ▼
+    Return servers dict
+         │
+         ├─ {
+         │   "FSL_Server": "https://fsl-server.com/...",
+         │   "10Gbps_Server": "https://fast.hubcloud.com/...",
+         │   "Pixeldrain": "https://pixeldrain.dev/..."
+         │  }
+         │
+         ▼
+    hubcloud_handler() checks priorities
+         │
+         ├─ Is "FSL_Server" available?
+         │  YES ✓ → Return FSL link ─┐
+         │  NO  → Continue          │
+         │                          │
+         ├─ Is "10Gbps_Server" available?
+         │  YES ✓ → Return 10Gbps ──┤
+         │  NO  → Continue         │
+         │                         │
+         ├─ Is "Pixeldrain" available?
+         │  YES ✓ → Return pixeldrain
+         │  NO  → Error           │
+         │                        │
+         ▼                        │
+    direct_link_generator() returns ◄─┘
+         │
+         ├─ "https://fsl-server.com/dl/abc123"
+         │
+         ▼
+    Bot receives link
+         │
+         ├─ Log: "Direct link found"
+         │
+         ▼
+    Start Download
+         │
+         ├─ aria2c "https://fsl-server.com/..."
+         │
+         ▼
+    ✓ Download complete!
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+ SCENARIO 3: ERROR CASE - UNKNOWN DOMAIN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+      User Input
+         │
+         ├─ "/leech https://example.com/file/123"
+         │
+         ▼
+    direct_link_generator()
+         │
+         ├─ Extract domain: "example.com"
+         │
+         ├─ Check all conditions...
+         │  Not GDFlix ✗
+         │  Not HubCloud ✗
+         │  Not MediaFire ✗
+         │  Not any other known site ✗
+         │
+         ▼
+    Raise DirectDownloadLinkException
+         │
+         ├─ "No Direct link function found for https://example.com/file/123"
+         │
+         ▼
+    Bot returns error to user
+         │
+         ├─ ERROR: Domain not supported
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+ FILES INVOLVED IN EACH SCENARIO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+GDFLIX FLOW:
+   1. bot/helper/mirror_leech_utils/download_utils/direct_link_generator.py
+      └─ main router → detects gdflix domain → calls gdflix()
+
+   2. bot/gdflix.py
+      └─ scrapes landing page → extracts mirrors → returns best link
+
+   3. bot/ (bot's aria2 integration)
+      └─ receives link → starts download
+
+HUBCLOUD FLOW:
+   1. bot/helper/mirror_leech_utils/download_utils/direct_link_generator.py
+      └─ main router → detects hubcloud domain → calls hubcloud_handler()
+
+   2. bot/hdhub_scraper.py
+      └─ bypasses protection → extracts servers → returns best link
+
+   3. bot/ (bot's download integration)
+      └─ receives link → starts download
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+ KEY DECISION POINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+GDFlix Mirror Priority:
+  1️⃣  Instant DL (fastest - 10GBPS CDN) → FIRST CHOICE
+  2️⃣  Pixeldrain (20MB/s) → Second choice
+  3️⃣  Cloud R2 (reliable) → Third choice
+  4️⃣  Index/Zip (flexible) → Last resort
+
+HubCloud Server Priority:
+  1️⃣  FSL Server (fastest) → FIRST CHOICE
+  2️⃣  10Gbps Server (high-speed) → Second choice
+  3️⃣  Pixeldrain (fallback) → Last resort
+
+Multiple Links:
+  Only FIRST link in message is processed
+  Others are ignored
+
+
+╚═══════════════════════════════════════════════════════════════════════════════╝

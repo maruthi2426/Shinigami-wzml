@@ -1,0 +1,42 @@
+FILES CHANGED/ADDED FOR GDFLIX & HUBCLOUD FIX
+==============================================
+
+NEW FILES ADDED:
+================
+1. /bot/gdflix.py
+   - New GDFlix scraper module (523 lines)
+   - Extracts instant DL, pixeldrain, cloud R2, index/zip mirrors
+
+2. /bot/hdhub_scraper.py
+   - Existing HubCloud bypasser module (copied from your attachment)
+   - Extracts FSL Server and 10Gbps links
+
+MODIFIED FILES:
+================
+3. /bot/helper/mirror_leech_utils/download_utils/direct_link_generator.py
+   
+   CHANGES MADE:
+   
+   a) ADDED IMPORTS (Lines 22-32):
+      - Import gdflix module with fallback
+      - Import hdhub_scraper module with fallback
+   
+   b) ADDED HANDLER FUNCTIONS (Lines 40-115):
+      - gdflix() function - handles GDFlix links with priority selection
+      - hubcloud_handler() function - handles HubCloud links with priority selection
+   
+   c) ADDED DETECTION IN direct_link_generator() (Lines 238-241):
+      - Detects GDFlix domains: gdflix.net, gdflix.cc, gdflix.ml
+      - Detects HubCloud domains: hubcloud.foo, hubcloud.one, hubcloud.cc, hubcloud.net
+      - Routes detected links to respective handlers
+   
+   d) UPDATED COMMENT (Line 483):
+      - Old hubcloud() function kept as fallback with updated docstring
+
+SUMMARY:
+=========
+Total new code added: ~100+ lines in direct_link_generator.py
+Total new files: 2 scraper modules
+Total modified files: 1 main generator file
+
+All changes are backward compatible - existing handlers still work.

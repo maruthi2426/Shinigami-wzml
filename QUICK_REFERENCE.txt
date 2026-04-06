@@ -1,0 +1,146 @@
+═══════════════════════════════════════════════════════════════════════════════
+  GDFLIX & HUBCLOUD FIX - QUICK REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
+
+WHERE CHANGES WERE MADE:
+─────────────────────────
+
+FILE 1: /bot/gdflix.py
+        └─ NEW FILE (523 lines)
+        └─ Scrapes GDFlix landing pages
+        └─ Extracts: Instant DL, Pixeldrain, Cloud R2, Index/Zip
+
+FILE 2: /bot/hdhub_scraper.py
+        └─ COPIED FILE (your attachment)
+        └─ Bypasses HubCloud protection
+        └─ Extracts: FSL Server, 10Gbps Server
+
+FILE 3: /bot/helper/mirror_leech_utils/download_utils/direct_link_generator.py
+        └─ MODIFIED FILE
+        ├─ Added imports (lines 22-32)
+        ├─ Added gdflix() handler (lines 40-75)
+        ├─ Added hubcloud_handler() (lines 82-115)
+        └─ Added domain detection (lines 238-241)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+WHAT EACH HANDLER DOES:
+───────────────────────
+
+gdflix() handler:
+  Input:  https://gdflix.net/file/abc123
+  → Calls get_gdflix_data()
+  → Returns: Instant DL link (PRIORITY 1)
+          OR Pixeldrain link (PRIORITY 2)
+          OR Cloud R2 link (PRIORITY 3)
+          OR Index/Zip link (PRIORITY 4)
+
+hubcloud_handler() handler:
+  Input:  https://hubcloud.foo/file/xyz789
+  → Calls bypass_hubcloud()
+  → Returns: FSL Server link (PRIORITY 1)
+          OR 10Gbps Server link (PRIORITY 2)
+          OR Pixeldrain link (PRIORITY 3)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+HOW IT FIXES YOUR ISSUE:
+────────────────────────
+
+BEFORE:
+  User sends GDFlix link
+  → Bot: "No Direct link function found"
+  → No download starts
+  ✗ BROKEN
+
+AFTER:
+  User sends GDFlix link
+  → Bot detects gdflix domain
+  → Calls gdflix() handler
+  → Extracts Instant DL link
+  → Starts aria2 download
+  ✓ WORKING
+
+═══════════════════════════════════════════════════════════════════════════════
+
+DOMAIN DETECTION:
+──────────────────
+
+GDFlix:
+  ✓ gdflix.net
+  ✓ gdflix.cc
+  ✓ gdflix.ml
+
+HubCloud:
+  ✓ hubcloud.foo
+  ✓ hubcloud.one
+  ✓ hubcloud.cc
+  ✓ hubcloud.net
+
+═══════════════════════════════════════════════════════════════════════════════
+
+INSTALLATION REQUIREMENTS:
+──────────────────────────
+
+Make sure these are installed:
+  pip install curl_cffi beautifulsoup4 requests lxml
+
+If not installed, you'll get:
+  "ERROR: GDFlix scraper not installed"
+  or
+  "ERROR: HubCloud scraper not installed"
+
+═══════════════════════════════════════════════════════════════════════════════
+
+PRIORITY SYSTEM:
+─────────────────
+
+GDFlix PRIORITIES:
+  1. Instant DL (CDN, 10GBPS speed)
+  2. Pixeldrain (20MB/s speed)
+  3. Cloud R2 (reliable backup)
+  4. Index/Zip (multiple files)
+
+HubCloud PRIORITIES:
+  1. FSL Server (fastest)
+  2. 10Gbps Server (high speed)
+  3. Pixeldrain (fallback)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SUCCESS SIGNS:
+────────────────
+
+✓ User sends GDFlix link → Download starts with Instant DL
+✓ User sends HubCloud link → Download starts with FSL Server
+✓ Multiple links ignored → Only first processed
+✓ Logs show [+] extraction messages → Mirrors found
+✓ No "No Direct link function found" → Domain detected
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING:
+────────────────
+
+Problem: "No Direct link function found for gdflix"
+Solution: Check /bot/gdflix.py exists and imports work
+
+Problem: "ERROR: GDFlix - [error details]"
+Solution: Check curl_cffi and beautifulsoup4 installed
+
+Problem: "No mirrors found"
+Solution: File may be deleted, try different file
+
+Problem: HubCloud link not downloading
+Solution: Try with https:// instead of http://
+
+═══════════════════════════════════════════════════════════════════════════════
+
+SUMMARY:
+─────────
+
+ADDED:   2 new scraper files
+MODIFIED: 1 main generator file (added ~100 lines)
+RESULT:   GDFlix and HubCloud links now auto-detect and download
+
+═══════════════════════════════════════════════════════════════════════════════
