@@ -5,6 +5,8 @@ from contextlib import suppress
 from psutil import disk_usage
 from os import path as ospath, readlink, walk
 from re import I, escape, search as re_search, split as re_split
+from zipfile import ZipFile
+from shutil import which
 
 from aiofiles.os import (
     listdir,
@@ -361,42 +363,82 @@ class SevenZ:
         self._percentage = "0%"
 
     async def extract(self, f_path, t_path, pswd):
-        cmd = [
-            "7z",
-            "x",
-            f"-p{pswd}",
-            f_path,
-            f"-o{t_path}",
-            "-aot",
-            "-xr!@PaxHeader",
-            "-bsp1",
-            "-bse1",
-            "-bb3",
-        ]
-        if not pswd:
-            del cmd[2]
-        if self._listener.is_cancelled:
-            return False
-        self._listener.subproc = await create_subprocess_exec(
-            *cmd,
-            stdout=PIPE,
-            stderr=PIPE,
-        )
-        await self._sevenz_progress()
-        _, stderr = await self._listener.subproc.communicate()
-        code = self._listener.subproc.returncode
-        if self._listener.is_cancelled:
-            return False
-        if code == -9:
-            self._listener.is_cancelled = True
-            return False
-        elif code != 0:
+        # Check if 7z is available
+        seven_z_available = which("7z") is not None
+        
+        if seven_z_available:
+            # Use 7z if available
+            cmd = [
+                "7z",
+                "x",
+                f"-p{pswd}",
+                f_path,
+                f"-o{t_path}",
+                "-aot",
+                "-xr!@PaxHeader",
+                "-bsp1",
+                "-bse1",
+                "-bb3",
+            ]
+            if not pswd:
+                del cmd[2]
+            if self._listener.is_cancelled:
+                return False
+            self._listener.subproc = await create_subprocess_exec(
+                *cmd,
+                stdout=PIPE,
+                stderr=PIPE,
+            )
+            await self._sevenz_progress()
+            _, stderr = await self._listener.subproc.communicate()
+            code = self._listener.subproc.returncode
+            if self._listener.is_cancelled:
+                return False
+            if code == -9:
+                self._listener.is_cancelled = True
+                return False
+            elif code != 0:
+                try:
+                    stderr = stderr.decode().strip()
+                except Exception:
+                    stderr = "Unable to decode the error!"
+                LOGGER.error(f"{stderr}. Unable to extract archive!. Path: {f_path}")
+            return code
+        else:
+            # Fallback to Python's zipfile for .zip files
             try:
-                stderr = stderr.decode().strip()
-            except Exception:
-                stderr = "Unable to decode the error!"
-            LOGGER.error(f"{stderr}. Unable to extract archive!. Path: {f_path}")
-        return code
+                if not f_path.lower().endswith('.zip'):
+                    LOGGER.error(f"7z not available and file is not .zip format. Unable to extract: {f_path}")
+                    return 1
+                
+                LOGGER.info(f"[FALLBACK] Using Python zipfile to extract: {f_path}")
+                
+                # Ensure target path exists
+                await aiomakedirs(t_path, exist_ok=True)
+                
+                # Extract using zipfile in a thread to avoid blocking
+                from concurrent.futures import ThreadPoolExecutor
+                import os
+                
+                def extract_zip():
+                    try:
+                        with ZipFile(f_path, 'r') as zip_ref:
+                            zip_ref.extractall(path=t_path, pwd=pswd.encode() if pswd else None)
+                        return 0
+                    except Exception as e:
+                        LOGGER.error(f"Zipfile extraction failed: {str(e)}")
+                        return 1
+                
+                loop = __import__('asyncio').get_event_loop()
+                code = await loop.run_in_executor(ThreadPoolExecutor(), extract_zip)
+                
+                if code == 0:
+                    LOGGER.info(f"[SUCCESS] Extracted using zipfile: {f_path}")
+                
+                return code
+            except Exception as e:
+                LOGGER.error(f"Extraction failed (zipfile fallback error): {str(e)}")
+                return 1
 
     async def zip(self, dl_path, up_path, pswd):
         size = await get_path_size(dl_path)
