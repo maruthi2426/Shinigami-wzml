@@ -4,7 +4,19 @@ import random
 import time
 from datetime import datetime
 import requests
-from bs4 import BeautifulSoup
+
+# Try to import BeautifulSoup, install if missing
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    try:
+        import subprocess
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "beautifulsoup4", "-q"])
+        from bs4 import BeautifulSoup
+        print("[INFO] beautifulsoup4 installed successfully")
+    except Exception as e:
+        print(f"[WARNING] Failed to install beautifulsoup4: {e}")
+        BeautifulSoup = None
 
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
