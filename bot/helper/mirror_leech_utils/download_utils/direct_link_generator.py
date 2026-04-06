@@ -19,12 +19,99 @@ from ...ext_utils.help_messages import PASSWORD_ERROR_MESSAGE
 from ...ext_utils.links_utils import is_share_link
 from ...ext_utils.status_utils import speed_string_to_bytes
 
+# Import new scrapers
+try:
+    from gdflix import get_gdflix_data
+except ImportError:
+    get_gdflix_data = None
+
+try:
+    from hdhub_scraper import bypass_hubcloud
+except ImportError:
+    bypass_hubcloud = None
+
 # GoFile token cache to avoid rate limiting
 gofile_token_cache = None
 
 user_agent = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"
 )
+
+# GDFlix and HubCloud Handler Functions
+def gdflix(link):
+    """GDFlix direct link generator with instant DL priority"""
+    if not get_gdflix_data:
+        raise DirectDownloadLinkException("ERROR: GDFlix scraper not installed")
+    try:
+        data = get_gdflix_data(link, proxy_list=[])
+        
+        if isinstance(data, list) and data and 'episodes' in data[0]:
+            # Pack detected - return all episodes
+            return data
+        
+        if "mirrors" in data and data["mirrors"]:
+            mirrors = data["mirrors"]
+            
+            # PRIORITY: Instant DL (Direct GD)
+            if "instant" in mirrors and mirrors["instant"]:
+                return mirrors["instant"]
+            
+            # PRIORITY 2: Pixeldrain
+            if "pixeldrain" in mirrors and mirrors["pixeldrain"]:
+                return mirrors["pixeldrain"]
+            
+            # PRIORITY 3: Cloud R2
+            if "cloud_r2" in mirrors and mirrors["cloud_r2"]:
+                return mirrors["cloud_r2"]
+            
+            # PRIORITY 4: Index Zip
+            if "index_zip" in mirrors and mirrors["index_zip"]:
+                return mirrors["index_zip"]
+            
+            # Return first available mirror
+            for key, url in mirrors.items():
+                if url:
+                    return url
+        
+        raise DirectDownloadLinkException("ERROR: No usable GDFlix mirror found")
+    
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: GDFlix - {str(e)}")
+
+
+def hubcloud_handler(link):
+    """HubCloud direct link generator with FSL priority"""
+    if not bypass_hubcloud:
+        raise DirectDownloadLinkException("ERROR: HubCloud scraper not installed")
+    try:
+        import requests as req_module
+        session = req_module.Session()
+        
+        data = bypass_hubcloud(link, session)
+        
+        if isinstance(data, dict):
+            # PRIORITY 1: FSL Server
+            if "FSL_Server" in data and data["FSL_Server"]:
+                return data["FSL_Server"]
+            
+            # PRIORITY 2: 10Gbps Server
+            if "10Gbps_Server" in data and data["10Gbps_Server"]:
+                return data["10Gbps_Server"]
+            
+            # PRIORITY 3: Pixeldrain
+            if "Pixeldrain" in data and data["Pixeldrain"]:
+                return data["Pixeldrain"]
+            
+            # Return first available link
+            for key, url in data.items():
+                if url:
+                    return url
+        
+        raise DirectDownloadLinkException("ERROR: No usable HubCloud link found")
+    
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: HubCloud - {str(e)}")
+
 
 debrid_link_supported_sites = [
     "1fichier.com",
@@ -148,6 +235,10 @@ def direct_link_generator(link):
     domain = urlparse(link).hostname
     if not domain:
         raise DirectDownloadLinkException("ERROR: Invalid URL")
+    elif any(x in domain for x in ["gdflix.net", "gdflix.cc", "gdflix.ml"]):
+        return gdflix(link)
+    elif any(x in domain for x in ["hubcloud.foo", "hubcloud.one", "hubcloud.cc", "hubcloud.net"]):
+        return hubcloud_handler(link)
     elif Config.DEBRID_LINK_API and any(
         x in domain for x in debrid_link_supported_sites
     ):
@@ -389,6 +480,7 @@ def debrid_link(url):
 
 
 def hubcloud(url):
+    """Fallback hubcloud function - uses external API as backup"""
     try:
         response = get(f"http://hubcloud.cfd/bypass?url={url}").json()
     except Exception as e:
