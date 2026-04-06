@@ -58,14 +58,14 @@ class EngineStatus:
         self.STATUS_UPHOSTER = "Uphoster"
 
 
-# Clean & Elegant Progress Bar (25 segments)
+# Clean Progress Bar
 def get_progress_bar_string(pct):
     try:
         pct_float = float(str(pct).strip("%"))
     except:
         pct_float = 0.0
     p = min(max(pct_float, 0), 100)
-    filled = int(round(p / 4))  # 25 blocks
+    filled = int(round(p / 4))  # 25 segments
     bar = "█" * filled + "░" * (25 - filled)
     return f"[{bar}] <b>{p:.1f}%</b>"
 
@@ -91,6 +91,76 @@ STATUSES = {
 }
 
 
+# ====================== HELPER FUNCTIONS ======================
+# These are now properly placed so they can be imported from other files
+
+def get_raw_file_size(size):
+    num, unit = size.split()
+    return int(float(num) * (1024 ** SIZE_UNITS.index(unit)))
+
+
+def get_readable_file_size(size_in_bytes):
+    if not size_in_bytes:
+        return "0B"
+    index = 0
+    while size_in_bytes >= 1024 and index < len(SIZE_UNITS) - 1:
+        size_in_bytes /= 1024
+        index += 1
+    return f"{size_in_bytes:.2f}{SIZE_UNITS[index]}"
+
+
+def get_readable_time(seconds: int):
+    periods = [("d", 86400), ("h", 3600), ("m", 60), ("s", 1)]
+    result = ""
+    for period_name, period_seconds in periods:
+        if seconds >= period_seconds:
+            period_value, seconds = divmod(seconds, period_seconds)
+            result += f"{int(period_value)}{period_name}"
+    return result or "0s"
+
+
+def get_raw_time(time_str: str) -> int:
+    time_units = {"d": 86400, "h": 3600, "m": 60, "s": 1}
+    return sum(int(value) * time_units[unit] for value, unit in findall(r"(\d+)([dhms])", time_str))
+
+
+def time_to_seconds(time_duration):
+    """Fixed & improved version - now safely importable"""
+    try:
+        parts = time_duration.split(":")
+        if len(parts) == 3:
+            hours, minutes, seconds = map(float, parts)
+        elif len(parts) == 2:
+            hours = 0
+            minutes, seconds = map(float, parts)
+        elif len(parts) == 1:
+            hours = 0
+            minutes = 0
+            seconds = float(parts[0])
+        else:
+            return 0
+        return int(hours * 3600 + minutes * 60 + seconds)
+    except Exception:
+        return 0
+
+
+def speed_string_to_bytes(size_text: str):
+    size = 0.0
+    size_text = size_text.lower()
+    if "k" in size_text:
+        size += float(size_text.split("k")[0]) * 1024
+    elif "m" in size_text:
+        size += float(size_text.split("m")[0]) * 1048576
+    elif "g" in size_text:
+        size += float(size_text.split("g")[0]) * 1073741824
+    elif "t" in size_text:
+        size += float(size_text.split("t")[0]) * 1099511627776
+    elif "b" in size_text:
+        size += float(size_text.split("b")[0])
+    return int(size)
+
+
+# ====================== MAIN STATUS MESSAGE ======================
 async def get_task_by_gid(gid: str):
     async with task_dict_lock:
         for tk in task_dict.values():
@@ -126,44 +196,6 @@ async def get_specific_tasks(status, user_id):
     return result
 
 
-async def get_all_tasks(req_status: str, user_id):
-    async with task_dict_lock:
-        return await get_specific_tasks(req_status, user_id)
-
-
-def get_raw_file_size(size):
-    num, unit = size.split()
-    return int(float(num) * (1024 ** SIZE_UNITS.index(unit)))
-
-
-def get_readable_file_size(size_in_bytes):
-    if not size_in_bytes:
-        return "0B"
-    index = 0
-    while size_in_bytes >= 1024 and index < len(SIZE_UNITS) - 1:
-        size_in_bytes /= 1024
-        index += 1
-    return f"{size_in_bytes:.2f}{SIZE_UNITS[index]}"
-
-
-def get_readable_time(seconds: int):
-    periods = [("d", 86400), ("h", 3600), ("m", 60), ("s", 1)]
-    result = ""
-    for period_name, period_seconds in periods:
-        if seconds >= period_seconds:
-            period_value, seconds = divmod(seconds, period_seconds)
-            result += f"{int(period_value)}{period_name}"
-    return result or "0s"
-
-
-def get_raw_time(time_str: str) -> int:
-    time_units = {"d": 86400, "h": 3600, "m": 60, "s": 1}
-    return sum(int(value) * time_units[unit] for value, unit in findall(r"(\d+)([dhms])", time_str))
-
-
-# ────────────────────────────────────────────────────────────────
-# Clean & Advanced Status Message Builder
-# ────────────────────────────────────────────────────────────────
 async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=1):
     msg = "<b>📊 Mirror Status</b>\n\n"
     button = None
@@ -173,7 +205,6 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
     tasks_no = len(tasks)
     pages = (max(tasks_no, 1) + STATUS_LIMIT - 1) // STATUS_LIMIT
 
-    # Smart pagination
     if page_no > pages:
         page_no = (page_no - 1) % pages + 1
         status_dict[sid]["page_no"] = page_no
@@ -195,74 +226,63 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
         task_index = index + start_position
         gid = task.gid()
 
-        # Task Header
         msg += f"<b>{task_index}. {tstatus}</b> <code>{gid}</code>\n"
         msg += f"📁 <b>{escape(task.name())}</b>\n"
 
-        if task.listener.subname:
+        if getattr(task.listener, 'subname', None):
             msg += f"📝 {escape(task.listener.subname)}\n"
 
-        # User Info
         user_mention = task.listener.message.from_user.mention(style='html')
         msg += f"👤 {user_mention} <code>(#{task.listener.message.from_user.id})</code>"
-        if task.listener.is_super_chat:
+        if getattr(task.listener, 'is_super_chat', False):
             msg += f" <a href='{task.listener.message.link}'>🔗</a>"
         msg += "\n\n"
 
         elapsed = time() - task.listener.message.date.timestamp()
 
-        # Main Task Info
-        if tstatus not in [MirrorStatus.STATUS_SEED, MirrorStatus.STATUS_QUEUEUP] and task.listener.progress:
-            # Active tasks (Download, Upload, Archive, etc.)
+        if tstatus not in [MirrorStatus.STATUS_SEED, MirrorStatus.STATUS_QUEUEUP] and getattr(task.listener, 'progress', None):
             progress = task.progress()
             bar = get_progress_bar_string(progress)
-
             msg += f"{bar}\n\n"
 
-            subsize = f" / {get_readable_file_size(task.listener.subsize)}" if task.listener.subname else ""
-            count = f" ({task.listener.proceed_count}/{len(task.listener.files_to_proceed) or '?'})" if task.listener.subname else ""
+            subsize = f" / {get_readable_file_size(task.listener.subsize)}" if getattr(task.listener, 'subname', None) else ""
+            count = f" ({task.listener.proceed_count}/{len(getattr(task.listener, 'files_to_proceed', [])) or '?'})" if getattr(task.listener, 'subname', None) else ""
 
             msg += f"📏 Size: <b>{task.size()}</b>\n"
             msg += f"📦 Processed: <b>{task.processed_bytes()}{subsize}</b>{count}\n"
             msg += f"⚡ Speed: <b>{task.speed()}</b>\n"
             msg += f"⏳ ETA: <b>{task.eta()}</b> | Elapsed: <b>{get_readable_time(elapsed)}</b>\n"
 
-            if tstatus == MirrorStatus.STATUS_DOWNLOAD and (task.listener.is_torrent or task.listener.is_qbit):
+            if tstatus == MirrorStatus.STATUS_DOWNLOAD and (getattr(task.listener, 'is_torrent', False) or getattr(task.listener, 'is_qbit', False)):
                 try:
                     msg += f"👥 Seeders: {task.seeders_num()} | Leechers: {task.leechers_num()}\n"
                 except:
                     pass
 
         elif tstatus == MirrorStatus.STATUS_SEED:
-            # Seeding
             msg += f"📏 Size: <b>{task.size()}</b>\n"
             msg += f"⬆️ Uploaded: <b>{task.uploaded_bytes()}</b>\n"
             msg += f"⚡ Speed: <b>{task.seed_speed()}</b>\n"
             msg += f"📈 Ratio: <b>{task.ratio()}</b>\n"
-            msg += f"⏰ Seeding Time: <b>{task.seeding_time()}</b> | Elapsed: <b>{get_readable_time(elapsed)}</b>\n"
+            msg += f"⏰ Seeding: <b>{task.seeding_time()}</b> | Elapsed: <b>{get_readable_time(elapsed)}</b>\n"
 
         else:
-            # Queued / Paused
             msg += f"📏 Size: <b>{task.size()}</b>\n"
 
-        # Engine & Mode
         msg += f"🚀 Engine: <b>{task.engine}</b>\n"
         msg += f"🔄 Mode: <b>{task.listener.mode[0]}</b> → <b>{task.listener.mode[1]}</b>\n"
 
-        # Cancel Command
         from ..telegram_helper.bot_commands import BotCommands
         msg += f"❌ Cancel: <code>/{BotCommands.CancelTaskCommand[1]}_{gid}</code>\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    # No tasks message
     if not displayed_tasks:
         if status == "All":
             return None, None
         msg = f"<b>No active {status} tasks.</b>\n\n"
 
-    # Page Info
     if len(tasks) > STATUS_LIMIT:
-        msg += f"📑 Page <b>{page_no}/{pages}</b> | Total Tasks: <b>{tasks_no}</b>\n"
+        msg += f"📑 Page <b>{page_no}/{pages}</b> | Total: <b>{tasks_no}</b>\n"
 
     # Buttons
     buttons = ButtonMaker()
@@ -274,7 +294,7 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
         buttons.data_button("➡️", f"status {sid} nex", position="header")
         if tasks_no > 30:
             for i in [1, 2, 4, 6, 8, 10]:
-                buttons.data_button(f"{i}", f"status {sid} ps {i}", position="footer")
+                buttons.data_button(str(i), f"status {sid} ps {i}", position="footer")
 
     if status != "All" or tasks_no > 20:
         for label, status_value in STATUSES.items():
@@ -284,11 +304,11 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
     buttons.data_button("🔄 Refresh", f"status {sid} ref", position="header")
     button = buttons.build_menu(8)
 
-    # Bot Stats Footer
+    # Footer
     free_space = get_readable_file_size(disk_usage(DOWNLOAD_DIR).free)
     free_pct = round(100 - disk_usage(DOWNLOAD_DIR).percent, 1)
 
-    msg += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     msg += f"<b>Bot Status</b>\n"
     msg += f"💻 CPU: <b>{cpu_percent()}%</b> | 🧠 RAM: <b>{virtual_memory().percent}%</b>\n"
     msg += f"🗄️ Free: <b>{free_space}</b> [{free_pct}%]\n"
