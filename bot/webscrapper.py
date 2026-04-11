@@ -100,62 +100,103 @@ class VegamoviesScraper:
         current_quality = "unknown"
         current_size = "unknown"
 
-        for element in soup.find_all(['h1', 'h2', 'h3', 'h4', 'strong', 'div', 'p', 'span', 'a']):
+        # Enhanced element scanning for better quality/size detection
+        for element in soup.find_all(['h1', 'h2', 'h3', 'h4', 'strong', 'div', 'p', 'span', 'a', 'button']):
             text = element.get_text(" ", strip=True)
-            quality_match = re.search(r'(480p|720p|1080p|4k|2160p|HQ 1080p)\s*(?:x264|x265|HEVC)?', text, re.I)
+            
+            # More comprehensive quality matching
+            quality_match = re.search(r'(480p|720p|1080p|4k|2160p|HQ\s+1080p|X264|X265|HEVC)\s*(?:x264|x265|HEVC|H\.?264|H\.?265)?', text, re.I)
             if quality_match:
                 current_quality = self._normalize_quality(quality_match.group(0))
+                # Also try to find size info in the same element
                 size_match = re.search(r'(\d+\.?\d*)\s*(GB|MB)', text, re.I)
                 if size_match:
                     current_size = size_match.group(0).upper()
                 continue
 
+            # Better link extraction - check both href and parents
             if element.name == "a" and element.has_attr("href"):
                 href = urljoin(base, element["href"])
                 full_text = element.get_text(" ", strip=True)
-                if any(x in href.lower() for x in ["nexdrive", "fast-dl.org"]):
+                
+                # Check for shortener links
+                if any(x in href.lower() for x in ["nexdrive", "fast-dl.org", "fastdl"]):
+                    # Try to find size in link text and parent
                     size_match = re.search(r'(\d+\.?\d*)\s*(GB|MB)', full_text + " " + text, re.I)
                     size = size_match.group(0).upper() if size_match else current_size
+                    
+                    # Extract episode from link text or URL
                     episode = self._extract_episode(full_text, href)
                     if episode == "unknown":
                         episode = page_episode
-                    links.append({
-                        "url": href,
-                        "size": size,
-                        "quality": current_quality,
-                        "episode": episode,
-                        "show_name": show_name,
-                        "season": season
-                    })
+                    
+                    # Only add if we have valid URL
+                    if href and href.startswith('http'):
+                        links.append({
+                            "url": href,
+                            "size": size,
+                            "quality": current_quality,
+                            "episode": episode,
+                            "show_name": show_name,
+                            "season": season
+                        })
+                        print(f"[DEBUG] Found link: {episode} | {current_quality} | {size}")
 
-        print(f"[INFO] Found {len(links)} short links")
+        print(f"[INFO] Found {len(links)} shortener link(s) total")
         return links
 
     def _resolve_shortener(self, short_url):
-        """Resolve shortener to direct link"""
+        """Resolve shortener to direct link using HTTP requests with advanced parsing"""
         try:
             print(f"[INFO] Resolving shortener: {short_url[:60]}...")
-            response = self.scraper.get(short_url, allow_redirects=True, timeout=15)
+            response = self.scraper.get(short_url, allow_redirects=True, timeout=15, verify=False)
+            response.encoding = 'utf-8'
             
             # Extract direct Google Drive links from HTML
             links = set()
             
-            # Check final URL
-            if 'googleusercontent' in response.url.lower():
+            # Check final URL for direct drive links
+            if any(x in response.url.lower() for x in ['googleusercontent', 'drive.google', 'lh3.googleusercontent']):
                 links.add(response.url)
             
-            # Extract from HTML
-            matches = re.findall(r'https?://[^\s"\'<>]+', response.text)
+            # Parse with BeautifulSoup for better link extraction
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Extract from all link attributes
+            for tag in soup.find_all(['a', 'button']):
+                href = tag.get('href', '')
+                if href and href.startswith('http'):
+                    if any(x in href.lower() for x in ['googleusercontent', 'drive.google', 'lh3.googleusercontent']):
+                        links.add(href)
+            
+            # Extract from HTML content with regex (for embedded download buttons)
+            matches = re.findall(r'https?://[^\s"\'<>{}|\\^`\[\]]{20,}', response.text)
             for m in matches:
-                if 'googleusercontent' in m.lower() or 'google.com' in m.lower():
+                if any(x in m.lower() for x in ['googleusercontent', 'video-downloads.googleusercontent', 'drive.google']):
                     # Clean URL
-                    m = m.split('"')[0].split("'")[0]
-                    if m.startswith('http'):
+                    m = m.split('"')[0].split("'")[0].split('\\')[0]
+                    if m.startswith('http') and len(m) > 30:
                         links.add(m)
             
-            return list(links) if links else [response.url]
+            # Check response text for any drive.google or googleusercontent patterns
+            if not links:
+                # Try to find hidden links in JavaScript or HTML variables
+                for match in re.finditer(r'(["\'])?(https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&\'()*+,;=%]+drive[a-zA-Z0-9\-._~:/?#\[\]@!$&\'()*+,;=%]*)\1?', response.text):
+                    potential_link = match.group(2)
+                    if potential_link and potential_link.startswith('http'):
+                        links.add(potential_link)
+            
+            if links:
+                print(f"[INFO] Found {len(links)} direct link(s) from shortener")
+                return list(links)
+            else:
+                print(f"[WARNING] No direct links found, returning final URL: {response.url[:80]}")
+                return [response.url] if response.url != short_url else []
+                
         except Exception as e:
             print(f"[ERROR] Failed to resolve {short_url}: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def _resolve_single(self, item, is_series=False):
@@ -248,27 +289,40 @@ class VegamoviesScraper:
 def scrape_website(url, quality_filter=None):
     """Main entry point for bot integration"""
     print("\n[INFO] ========== STARTING SCRAPER ==========")
-    print(f"[INFO] Please wait... Scraping: {url}")
+    print(f"[INFO] URL: {url}")
+    print(f"[INFO] CloudScraper Mode (No Chrome Required)")
     if quality_filter:
         print(f"[INFO] Quality filter: {quality_filter}")
     print("[INFO] =======================================\n")
     
     scraper = VegamoviesScraper()
     try:
+        print(f"[INFO] Step 1: Fetching page content...")
         results = scraper.scrape(url, quality_filter=quality_filter)
         
         if results:
-            print(f"[INFO] ========== SCRAPER COMPLETED ==========")
-            print(f"[INFO] Found {len(results)} direct download link(s)")
-            print(f"[INFO] Preparing for leech/mirror...")
+            print(f"\n[INFO] ========== SCRAPER COMPLETED ==========")
+            print(f"[SUCCESS] Found {len(results)} direct download link(s)")
+            print(f"[INFO] Preparing for download...")
             print(f"[INFO] ==========================================\n")
+            
+            # Log found links
+            for i, result in enumerate(results, 1):
+                print(f"[{i}] {result.get('quality', 'unknown')} | {result.get('size', 'unknown')} | {result['url'][:80]}...")
+            
             return results
         else:
-            print(f"[ERROR] No direct download links found")
+            print(f"\n[ERROR] No direct download links found from scraper")
+            print(f"[INFO] Possible causes:")
+            print(f"[INFO]  - Shortener links could not be resolved")
+            print(f"[INFO]  - No Google Drive links found on the page")
+            print(f"[INFO]  - Quality filter may be too restrictive")
+            print(f"[INFO] ==========================================\n")
             return []
     
     except Exception as e:
-        print(f"[ERROR] Scraping failed: {e}")
+        print(f"\n[ERROR] Scraping failed: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
+        print(f"[INFO] ==========================================\n")
         return []
