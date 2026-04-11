@@ -1,0 +1,104 @@
+VEGAMOVIES INTEGRATION - QUICK START GUIDE
+===========================================
+
+WHAT WAS DONE:
+==============
+
+✓ Added quality filter (-q) support to all commands
+✓ Fixed direct_link_generator to accept quality parameter
+✓ Created advanced VegaMovies scraper with Selenium
+✓ Real-time direct link extraction (no pre-stored links)
+✓ Automatic shortener resolution
+✓ Series/Movie detection with episode extraction
+✓ Quality filtering (480p, 720p, 1080p, 4K, x264, x265)
+
+FILES MODIFIED:
+===============
+
+1. bot/modules/mirror_leech.py
+   - Added "-q" quality flag parsing
+
+2. bot/helper/mirror_leech_utils/download_utils/direct_link_generator.py
+   - Updated function signature to accept quality_filter
+   - Added vegamovies domain detection
+   - Fixed hubcloud_handler implementation
+
+FILES ALREADY WORKING:
+=====================
+
+✓ bot/webscrapper.py - Advanced scraping engine
+✓ bot/gdflix.py - GDFlix scraper
+✓ bot/hdhub_scraper.py - HubCloud bypass
+
+
+COMMAND EXAMPLES:
+=================
+
+VegaMovies with Quality:
+  /leech https://vegamovies.wedding/movie-name -q 720p
+  /mirror https://vegamovies.wedding/movie-name -q 1080p
+
+VegaMovies Auto (best quality):
+  /leech https://vegamovies.wedding/movie-name
+
+GDFlix (automatic):
+  /leech https://new16.gdflix.net/file/xyz
+
+HubCloud (automatic):
+  /leech https://hubcloud.foo/drive/abc
+
+
+QUALITY OPTIONS:
+=================
+
+-q 480p      480p version
+-q 720p      720p version
+-q 1080p     1080p version
+-q 4K        4K version
+-q x264      x264 codec
+-q x265      x265 codec
+
+(Quality matching is case-insensitive)
+
+
+HOW IT WORKS IN REAL-TIME:
+===========================
+
+1. User sends command with URL and quality
+2. Bot detects VegaMovies domain
+3. Selenium opens headless browser
+4. Page fully loads with JavaScript
+5. BeautifulSoup parses all download links
+6. Links filtered by quality parameter
+7. Shortener links resolved to direct URLs
+8. First direct link returned
+9. aria2 starts download immediately
+10. Process shown in real-time logs
+
+
+EXPECTED OUTPUT:
+=================
+
+[INFO] ========== STARTING SCRAPER ==========
+[INFO] URL: https://vegamovies.wedding/...
+[INFO] Quality Filter: 720p
+[INFO] Initializing browser (Selenium)...
+[INFO] Page loaded successfully
+[INFO] Extracting download links...
+[INFO] Resolving 1 shortener link(s)...
+[SUCCESS] Scraping completed in 2.35s - Found 1 direct links
+[INFO] Generated link: https://drive.google.com/...
+[INFO] Aria2Download started
+
+
+READY TO USE:
+==============
+
+All systems are now active:
+✓ VegaMovies scraper with quality filtering
+✓ GDFlix scraper with instant DL
+✓ HubCloud scraper with FSL priority
+✓ Advanced logic for direct downloads
+✓ Real-time link extraction
+
+The bot is ready for production use!

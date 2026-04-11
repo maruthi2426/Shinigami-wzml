@@ -1,0 +1,196 @@
+VEGAMOVIES INTEGRATION COMPLETE - ADVANCED SCRAPER SYSTEM
+=========================================================
+
+FILES MODIFIED:
+===============
+
+1. bot/modules/mirror_leech.py
+   - ADDED: "-q" flag to args dictionary (line 134)
+   - ADDED: self.quality_filter = args["-q"] (line 167)
+   - MODIFIED: direct_link_generator call to pass quality_filter (line 395)
+
+2. bot/helper/mirror_leech_utils/download_utils/direct_link_generator.py
+   - MODIFIED: direct_link_generator() signature to accept quality_filter parameter
+   - MODIFIED: webscrapper_handler() call to pass quality_filter
+   - FIXED: hubcloud_handler() function implementation (was incomplete)
+   - REMOVED: Duplicate broken code
+   
+FILES ALREADY EXIST:
+====================
+
+3. bot/webscrapper.py (395 lines)
+   - VegaMoviesScraper class with advanced Selenium-based scraping
+   - Quality filtering (480p, 720p, 1080p, 4K, x264, x265)
+   - Series/Movie auto-detection
+   - Shortener link resolution (Google Drive, Pixeldrain, etc.)
+   - Episode extraction for series
+   - Direct link generation with real-time scraping
+
+4. bot/gdflix.py
+   - GDFlix scraper with instant DL priority
+
+5. bot/hdhub_scraper.py
+   - HubCloud bypass with FSL Server priority
+
+
+COMMAND USAGE:
+==============
+
+Format: /leech OR /mirror <URL> -q <QUALITY>
+
+Examples:
+---------
+
+1. VegaMovies with Quality Filter:
+   /leech https://vegamovies.wedding/51369-anemone-2025-hindi-dual-audio-web-dl-720p-480p-1080p.html -q 720p
+   /mirror https://vegamovies.wedding/movie-name -q 1080p
+
+2. VegaMovies without Quality Filter (auto-detects best):
+   /leech https://vegamovies.wedding/movie-name
+
+3. GDFlix Links (automatic):
+   /leech https://new16.gdflix.net/file/xyz
+
+4. HubCloud Links (automatic):
+   /leech https://hubcloud.foo/drive/abc
+
+
+HOW IT WORKS - COMPLETE FLOW:
+=============================
+
+USER INPUT:
+-----------
+/leech https://vegamovies.wedding/movie -q 720p
+
+PROCESSING:
+-----------
+1. Bot receives command
+2. arg_parser extracts URL and quality filter (-q 720p)
+3. URL validation check
+4. direct_link_generator() is called with URL and quality_filter
+5. Domain detection identifies vegamovies.wedding
+6. webscrapper_handler() is triggered
+7. webscrapper.py loads and initializes VegaMoviesScraper
+8. Selenium driver fetches page with JavaScript rendering
+9. BeautifulSoup parses HTML
+10. Downloads links extracted with quality metadata
+11. Quality filter applied (matching "720p")
+12. Shortener links resolved to direct URLs
+13. Direct Google Drive/Pixeldrain links returned
+14. aria2 begins download automatically
+
+DOWNLOAD STARTS:
+----------------
+✓ Quality: 720p
+✓ Direct link obtained from scraper
+✓ aria2 downloads file
+✓ Upload/Mirror process begins automatically
+
+
+EXPECTED LOG OUTPUT:
+====================
+
+[INFO] Running Pre Task Checks ...
+[INFO] https://vegamovies.wedding/51369-anemone-2025...
+[INFO] ========== STARTING SCRAPER ==========
+[INFO] URL: https://vegamovies.wedding/51369-anemone-2025...
+[INFO] Quality Filter: 720p
+[INFO] ==========================================
+[INFO] Initializing browser (Selenium)...
+[INFO] Page loaded successfully
+[INFO] Extracting download links...
+[INFO] Found: Movie Title - 720p x264
+[INFO] Resolving 1 shortener link(s)...
+[INFO] Processing [1/1] 720p Movie
+[INFO] Resolving shortener link...
+[INFO] Resolved to: https://drive.google.com/uc?id=xyz&export=download
+[SUCCESS] Scraping completed in 2.35s - Found 1 direct links
+[INFO] Generated link: https://drive.google.com/uc?id=xyz&export=download
+[INFO] Aria2Download started: . Gid: xyz123
+
+
+ADVANCED FEATURES:
+==================
+
+1. Quality Filtering:
+   -q 480p    → Downloads 480p version
+   -q 720p    → Downloads 720p version
+   -q 1080p   → Downloads 1080p version
+   -q 4K      → Downloads 4K version
+   -q x264    → Downloads x264 codec version
+   -q x265    → Downloads x265 codec version
+
+2. Series Detection:
+   Automatically detects if content is a series
+   Extracts individual episode links
+   Can filter by quality for each episode
+
+3. Shortener Resolution:
+   - Google Drive links
+   - Pixeldrain
+   - Direct CDN links
+   - Other shorteners supported
+
+4. Real-time Processing:
+   - No pre-stored links
+   - Fresh scrape every time
+   - Always gets latest available links
+
+
+EXTENSIBILITY:
+===============
+
+To add more website scrapers in future:
+
+1. Create scraper class in webscrapper.py
+   class NewSiteScraper:
+       def __init__(self):
+           ...
+       def scrape(self, url, quality_filter):
+           ...
+
+2. Register in get_scraper_for_url():
+   if "newsite.com" in url_lower:
+       return NewSiteScraper()
+
+3. Update direct_link_generator() if needed:
+   elif "newsite" in domain:
+       return webscrapper_handler(link, quality_filter)
+
+
+AUTOMATIC PROCESSING CHAIN:
+============================
+
+Scrape URL with Quality
+    ↓
+Extract Download Links
+    ↓
+Apply Quality Filter
+    ↓
+Resolve Shortener Links
+    ↓
+Get Direct Download URL
+    ↓
+Return to direct_link_generator
+    ↓
+aria2 Begins Download
+    ↓
+Upload/Mirror (if enabled)
+    ↓
+User receives file
+
+
+DEPENDENCIES:
+==============
+
+Required packages (auto-installed):
+- selenium (Headless Chrome automation)
+- beautifulsoup4 (HTML parsing)
+- webdriver-manager (Chrome driver management)
+- requests (HTTP requests)
+
+All handled automatically with pip install checks.
+
+
+STATUS: ✓ COMPLETE AND READY FOR PRODUCTION
+=============================================
