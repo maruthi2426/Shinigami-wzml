@@ -4,22 +4,40 @@ import requests
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
-# Use cloudscraper instead of Selenium for lightweight cloud compatibility
+# Try to use Selenium for robust shortener resolution, fallback to CloudScraper
+SELENIUM_AVAILABLE = False
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.chrome.service import Service
+    from selenium.common.exceptions import TimeoutException
+    from webdriver_manager.chrome import ChromeDriverManager
+    SELENIUM_AVAILABLE = True
+    print("[INFO] Selenium detected - will use for shortener resolution")
+except ImportError:
+    print("[INFO] Selenium not available - using CloudScraper + requests fallback")
+
 try:
     import cloudscraper
     CLOUDSCRAPER_AVAILABLE = True
 except ImportError:
     CLOUDSCRAPER_AVAILABLE = False
-    print("[WARNING] cloudscraper not installed, using requests fallback")
+    print("[WARNING] cloudscraper not installed")
 
 
 class VegamoviesScraper:
     def __init__(self):
         self.scraper = None
+        self.driver = None
+        self.selenium_available = SELENIUM_AVAILABLE
+        
         if CLOUDSCRAPER_AVAILABLE:
             try:
                 self.scraper = cloudscraper.create_scraper()
-                print("[INFO] CloudScraper initialized successfully")
+                print("[INFO] CloudScraper initialized for page fetching")
             except Exception as e:
                 print(f"[WARNING] CloudScraper init failed: {e}, using requests fallback")
                 self.scraper = requests.Session()
@@ -145,10 +163,94 @@ class VegamoviesScraper:
         print(f"[INFO] Found {len(links)} shortener link(s) total")
         return links
 
-    def _resolve_shortener(self, short_url):
-        """Resolve shortener to direct link using HTTP requests with advanced parsing"""
+    def _create_selenium_driver(self):
+        """Create a Selenium Chrome driver for shortener resolution"""
+        if not SELENIUM_AVAILABLE:
+            return None
+        
         try:
-            print(f"[INFO] Resolving shortener: {short_url[:60]}...")
+            options = Options()
+            options.add_argument("--headless=new")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-setuid-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--disable-extensions")
+            options.add_argument("--page-load-strategy=eager")
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option("useAutomationExtension", False)
+            
+            return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        except Exception as e:
+            print(f"[WARNING] Failed to create Selenium driver: {e}")
+            return None
+    
+    def _resolve_with_selenium(self, short_url):
+        """Resolve shortener using Selenium (handles JavaScript redirects)"""
+        if not SELENIUM_AVAILABLE or self.driver is None:
+            return []
+        
+        try:
+            print(f"[INFO] Using Selenium to resolve: {short_url[:60]}...")
+            self.driver.get(short_url)
+            time.sleep(0.15)
+            
+            # Look for and click verify button if present
+            try:
+                verify_btn = WebDriverWait(self.driver, 2).until(
+                    EC.element_to_be_clickable((
+                        By.XPATH,
+                        "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'verify')] | "
+                        "//a[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'verify')]"
+                    ))
+                )
+                self.driver.execute_script("arguments[0].click();", verify_btn)
+                time.sleep(0.8)
+            except TimeoutException:
+                time.sleep(1.0)
+            
+            # Extract links from page
+            links = set()
+            
+            # Get direct links from href attributes
+            for el in self.driver.find_elements(By.TAG_NAME, "a"):
+                try:
+                    href = el.get_attribute("href")
+                    if href and href.startswith("http"):
+                        if not any(x in href.lower() for x in ["nexdrive", "fast-dl", "vgmlinks", "tinyurl", "t.me"]):
+                            links.add(href)
+                except:
+                    continue
+            
+            # Get links from page source
+            html = self.driver.page_source
+            matches = re.findall(r'https?://[^\s"\'<>]+', html)
+            for m in matches:
+                if any(x in m.lower() for x in ["googleusercontent", "video-downloads.googleusercontent", "drive.google"]):
+                    links.add(m)
+            
+            if links:
+                print(f"[INFO] Selenium resolved {len(links)} direct link(s)")
+                return list(links)
+            else:
+                print(f"[WARNING] Selenium: No direct links found")
+                return []
+        
+        except Exception as e:
+            print(f"[WARNING] Selenium resolution failed: {e}")
+            return []
+
+    def _resolve_shortener(self, short_url):
+        """Resolve shortener using Selenium first, fallback to HTTP requests"""
+        # Try Selenium first if available
+        if self.driver is not None:
+            links = self._resolve_with_selenium(short_url)
+            if links:
+                return links
+        
+        # Fallback to HTTP-based resolution
+        try:
+            print(f"[INFO] Resolving shortener (HTTP): {short_url[:60]}...")
             response = self.scraper.get(short_url, allow_redirects=True, timeout=15, verify=False)
             response.encoding = 'utf-8'
             
@@ -169,33 +271,23 @@ class VegamoviesScraper:
                     if any(x in href.lower() for x in ['googleusercontent', 'drive.google', 'lh3.googleusercontent']):
                         links.add(href)
             
-            # Extract from HTML content with regex (for embedded download buttons)
+            # Extract from HTML content with regex
             matches = re.findall(r'https?://[^\s"\'<>{}|\\^`\[\]]{20,}', response.text)
             for m in matches:
                 if any(x in m.lower() for x in ['googleusercontent', 'video-downloads.googleusercontent', 'drive.google']):
-                    # Clean URL
                     m = m.split('"')[0].split("'")[0].split('\\')[0]
                     if m.startswith('http') and len(m) > 30:
                         links.add(m)
             
-            # Check response text for any drive.google or googleusercontent patterns
-            if not links:
-                # Try to find hidden links in JavaScript or HTML variables
-                for match in re.finditer(r'(["\'])?(https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&\'()*+,;=%]+drive[a-zA-Z0-9\-._~:/?#\[\]@!$&\'()*+,;=%]*)\1?', response.text):
-                    potential_link = match.group(2)
-                    if potential_link and potential_link.startswith('http'):
-                        links.add(potential_link)
-            
             if links:
-                print(f"[INFO] Found {len(links)} direct link(s) from shortener")
+                print(f"[INFO] HTTP resolved {len(links)} direct link(s)")
                 return list(links)
             else:
-                print(f"[WARNING] No direct links found, returning final URL: {response.url[:80]}")
-                return [response.url] if response.url != short_url else []
+                print(f"[WARNING] No direct links found via HTTP")
+                return []
                 
         except Exception as e:
-            print(f"[ERROR] Failed to resolve {short_url}: {e}")
-            import traceback
+            print(f"[ERROR] HTTP resolution failed: {e}")
             traceback.print_exc()
             return []
 
@@ -228,11 +320,20 @@ class VegamoviesScraper:
         return all_resolved
 
     def scrape(self, url, quality_filter=None):
-        """Main scraping function using cloudscraper (no Selenium needed)"""
+        """Main scraping function with hybrid Selenium + CloudScraper approach"""
         start_time = time.time()
 
         if quality_filter:
             print(f"[INFO] Quality filter: {quality_filter}")
+
+        # Try to initialize Selenium driver for shortener resolution
+        if SELENIUM_AVAILABLE:
+            print(f"[INFO] Initializing Selenium for shortener resolution...")
+            self.driver = self._create_selenium_driver()
+            if self.driver:
+                print(f"[INFO] Selenium driver ready")
+            else:
+                print(f"[WARNING] Selenium driver failed - will use HTTP fallback")
 
         try:
             html = self._fetch_page(url)
@@ -243,7 +344,7 @@ class VegamoviesScraper:
             short_links = self.get_links(html, url, url)
 
             if not short_links:
-                print("[ERROR] No shortener links found")
+                print("[ERROR] No shortener links found on page")
                 return []
 
             if quality_filter:
@@ -264,7 +365,7 @@ class VegamoviesScraper:
 
             results = []
             if short_links:
-                print(f"[INFO] Resolving {len(short_links)} short link(s)...")
+                print(f"[INFO] Resolving {len(short_links)} shortener link(s)...")
                 for item in short_links:
                     resolved = self._resolve_single(item, is_series)
                     results.extend(resolved)
@@ -284,13 +385,25 @@ class VegamoviesScraper:
             import traceback
             traceback.print_exc()
             return []
+        
+        finally:
+            # Cleanup Selenium driver
+            if self.driver:
+                try:
+                    self.driver.quit()
+                except:
+                    pass
+                self.driver = None
 
 
 def scrape_website(url, quality_filter=None):
-    """Main entry point for bot integration"""
+    """Main entry point for bot integration - Hybrid Selenium + CloudScraper"""
     print("\n[INFO] ========== STARTING SCRAPER ==========")
     print(f"[INFO] URL: {url}")
-    print(f"[INFO] CloudScraper Mode (No Chrome Required)")
+    if SELENIUM_AVAILABLE:
+        print(f"[INFO] Mode: Selenium + CloudScraper (Hybrid)")
+    else:
+        print(f"[INFO] Mode: CloudScraper + HTTP Fallback")
     if quality_filter:
         print(f"[INFO] Quality filter: {quality_filter}")
     print("[INFO] =======================================\n")
