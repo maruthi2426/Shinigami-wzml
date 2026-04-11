@@ -26,8 +26,10 @@ from ...ext_utils.status_utils import speed_string_to_bytes
 # Initialize scraper modules - will be loaded at first use
 GDFLIX_AVAILABLE = False
 HUBCLOUD_AVAILABLE = False
+WEBSCRAPPER_AVAILABLE = False
 get_gdflix_data = None
 bypass_hubcloud = None
+scrape_website = None
 
 # Get bot directory path reliably
 _current_file = ospath.abspath(__file__)
@@ -105,9 +107,43 @@ def _load_hubcloud_module():
         traceback.print_exc()
         return False
 
+def _load_webscrapper_module():
+    global WEBSCRAPPER_AVAILABLE, scrape_website
+    webscrapper_path = ospath.join(bot_dir, 'webscrapper.py')
+    print(f"[DEBUG] Attempting to load WebScrapper from: {webscrapper_path}")
+    print(f"[DEBUG] File exists: {ospath.exists(webscrapper_path)}")
+    
+    if not ospath.exists(webscrapper_path):
+        print(f"[WARNING] WebScrapper not found at {webscrapper_path}")
+        return False
+    
+    try:
+        spec = importlib.util.spec_from_file_location("webscrapper_module", webscrapper_path)
+        if spec is None or spec.loader is None:
+            print(f"[ERROR] Failed to create spec for WebScrapper")
+            return False
+        
+        webscrapper_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(webscrapper_module)
+        
+        if not hasattr(webscrapper_module, 'scrape_website'):
+            print(f"[ERROR] webscrapper.py does not have scrape_website function")
+            return False
+        
+        scrape_website = webscrapper_module.scrape_website
+        WEBSCRAPPER_AVAILABLE = True
+        print(f"[INFO] WebScrapper module loaded successfully")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to load WebScrapper: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 # Load modules at import time
 _load_gdflix_module()
 _load_hubcloud_module()
+_load_webscrapper_module()
 
 # GoFile token cache to avoid rate limiting
 gofile_token_cache = None
@@ -172,6 +208,34 @@ def hubcloud_handler(link):
     
     if not HUBCLOUD_AVAILABLE or bypass_hubcloud is None:
         raise DirectDownloadLinkException("ERROR: HubCloud scraper module not loaded. Make sure hdhub_scraper.py exists in bot directory")
+
+
+def webscrapper_handler(link, quality_filter=None):
+    """Web scraper for VegaMovies and other websites"""
+    # Attempt to load if not already loaded
+    if not WEBSCRAPPER_AVAILABLE:
+        print(f"[WARNING] Attempting deferred load of WebScrapper")
+        _load_webscrapper_module()
+    
+    if not WEBSCRAPPER_AVAILABLE or scrape_website is None:
+        raise DirectDownloadLinkException("ERROR: WebScrapper module not loaded. Make sure webscrapper.py exists in bot directory")
+    
+    try:
+        print(f"[INFO] Starting web scrape for: {link}")
+        results = scrape_website(link, quality_filter)
+        
+        if not results:
+            raise DirectDownloadLinkException("ERROR: No direct download links found from scraper")
+        
+        # Return the first/best result or all results
+        if len(results) == 1:
+            return results[0]["url"]
+        else:
+            # Return list of URLs for batch processing
+            return [r["url"] for r in results]
+    
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: WebScrapper - {str(e)}")
     try:
         import requests as req_module
         session = req_module.Session()
@@ -328,6 +392,8 @@ def direct_link_generator(link):
         return gdflix(link)
     elif any(x in domain for x in ["hubcloud.foo", "hubcloud.one", "hubcloud.cc", "hubcloud.net"]):
         return hubcloud_handler(link)
+    elif "vegamovies" in domain:
+        return webscrapper_handler(link)
     elif Config.DEBRID_LINK_API and any(
         x in domain for x in debrid_link_supported_sites
     ):
