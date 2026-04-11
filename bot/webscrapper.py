@@ -1,54 +1,34 @@
 import re
 import time
+import requests
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-from webdriver_manager.chrome import ChromeDriverManager
+
+# Use cloudscraper instead of Selenium for lightweight cloud compatibility
+try:
+    import cloudscraper
+    CLOUDSCRAPER_AVAILABLE = True
+except ImportError:
+    CLOUDSCRAPER_AVAILABLE = False
+    print("[WARNING] cloudscraper not installed, using requests fallback")
 
 
 class VegamoviesScraper:
     def __init__(self):
-        pass
-
-    def _create_driver(self, fast_mode=False):
-        options = Options()
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-setuid-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-infobars")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--blink-settings=imagesEnabled=false")
-        options.add_argument("--disable-features=Translate,OptimizationHints,MediaRouter,NetworkService,IsolateOrigins,site-per-process")
-        options.add_argument("--disable-background-networking")
-        options.add_argument("--disable-background-timer-throttling")
-        options.add_argument("--disable-renderer-backgrounding")
-        options.add_argument("--disable-backgrounding-occluded-windows")
-        options.add_argument("--disable-breakpad")
-        options.add_argument("--log-level=3")
-        options.add_argument("--single-process")
-        options.page_load_strategy = "eager"
-
-        if fast_mode:
-            options.add_argument("--disable-webgl")
-            options.add_argument("--disable-3d-apis")
-            options.add_argument("--disable-plugins")
-
-        options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-        options.add_experimental_option("useAutomationExtension", False)
-        options.add_experimental_option("prefs", {
-            "profile.managed_default_content_settings.images": 2,
-            "profile.default_content_setting_values.notifications": 2,
+        self.scraper = None
+        if CLOUDSCRAPER_AVAILABLE:
+            try:
+                self.scraper = cloudscraper.create_scraper()
+                print("[INFO] CloudScraper initialized successfully")
+            except Exception as e:
+                print(f"[WARNING] CloudScraper init failed: {e}, using requests fallback")
+                self.scraper = requests.Session()
+        else:
+            self.scraper = requests.Session()
+        
+        self.scraper.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
-        return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
     def _extract_episode(self, text="", url_slug=""):
         if url_slug:
@@ -82,20 +62,19 @@ class VegamoviesScraper:
         q = re.sub(r'\s+', ' ', q).strip()
         return q
 
-    def _fetch_with_driver(self, url, driver, fast_mode=False):
-        print("[INFO] Loading VegaMovies page (single driver)")
+    def _fetch_page(self, url):
+        """Fetch page using cloudscraper or requests (no Selenium needed)"""
+        print("[INFO] Loading VegaMovies page...")
         start = time.time()
-        driver.get(url)
-
-        scrolls = 2 if fast_mode else 3
-        for _ in range(scrolls):
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(0.12 if fast_mode else 0.22)
-
-        time.sleep(0.6 if fast_mode else 0.9)
-        html = driver.page_source
-        print(f"[INFO] Page loaded in {time.time() - start:.2f}s")
-        return html
+        try:
+            response = self.scraper.get(url, timeout=30)
+            response.raise_for_status()
+            elapsed = time.time() - start
+            print(f"[INFO] Page loaded in {elapsed:.2f}s")
+            return response.text
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch page: {e}")
+            return None
 
     def get_links(self, html, base, url):
         soup = BeautifulSoup(html, "html.parser")
@@ -152,7 +131,35 @@ class VegamoviesScraper:
         print(f"[INFO] Found {len(links)} short links")
         return links
 
-    def _resolve_single(self, item, driver, is_series=False, fast_mode=False):
+    def _resolve_shortener(self, short_url):
+        """Resolve shortener to direct link"""
+        try:
+            print(f"[INFO] Resolving shortener: {short_url[:60]}...")
+            response = self.scraper.get(short_url, allow_redirects=True, timeout=15)
+            
+            # Extract direct Google Drive links from HTML
+            links = set()
+            
+            # Check final URL
+            if 'googleusercontent' in response.url.lower():
+                links.add(response.url)
+            
+            # Extract from HTML
+            matches = re.findall(r'https?://[^\s"\'<>]+', response.text)
+            for m in matches:
+                if 'googleusercontent' in m.lower() or 'google.com' in m.lower():
+                    # Clean URL
+                    m = m.split('"')[0].split("'")[0]
+                    if m.startswith('http'):
+                        links.add(m)
+            
+            return list(links) if links else [response.url]
+        except Exception as e:
+            print(f"[ERROR] Failed to resolve {short_url}: {e}")
+            return []
+
+    def _resolve_single(self, item, is_series=False):
+        """Resolve single download item without Selenium"""
         short_url = item["url"]
         main_episode = item.get("episode", "EP01")
         main_quality = item.get("quality", "unknown")
@@ -161,93 +168,37 @@ class VegamoviesScraper:
         main_size = item.get("size", "unknown")
 
         start_resolve = time.time()
-        sleep_time = 0.08 if fast_mode else 0.25
-        verify_wait = 1.0 if fast_mode else 2.0
-        verify_sleep = 0.35 if fast_mode else 0.9
-        timeout_sleep = 0.7 if fast_mode else 1.4
-
-        print(f"[INFO] Bypassing Nexdrive ({main_quality} | {main_episode} | {main_size})")
-        driver.get(short_url)
-        time.sleep(sleep_time)
-
-        next_shorteners = []
-        try:
-            for el in driver.find_elements(By.TAG_NAME, "a"):
-                href = el.get_attribute("href") or ""
-                if href and "fast-dl.org" in href.lower():
-                    a_text = el.get_attribute("innerText") or el.text or ""
-                    sub_episode = self._extract_episode(a_text, href)
-                    if sub_episode == "unknown":
-                        sub_episode = main_episode
-                    next_shorteners.append((href, sub_episode))
-        except:
-            pass
-
-        if not next_shorteners:
-            next_shorteners = [(short_url, main_episode)]
-
-        if not is_series:
-            next_shorteners = [next_shorteners[0]] if next_shorteners else []
-
+        print(f"[INFO] Resolving link ({main_quality} | {main_episode} | {main_size})")
+        
+        resolved_links = self._resolve_shortener(short_url)
+        
         all_resolved = []
-        for idx, (next_url, sub_episode) in enumerate(next_shorteners, 1):
-            if len(next_shorteners) > 1 or is_series:
-                print(f"[INFO] Resolving fast-dl {idx}/{len(next_shorteners)} [{sub_episode}]")
-
-            driver.get(next_url)
-            time.sleep(sleep_time)
-
-            try:
-                verify_btn = WebDriverWait(driver, verify_wait).until(
-                    EC.element_to_be_clickable((
-                        By.XPATH,
-                        "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'verify')] | "
-                        "//a[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'verify')]"
-                    ))
-                )
-                driver.execute_script("arguments[0].click();", verify_btn)
-                time.sleep(verify_sleep)
-            except TimeoutException:
-                time.sleep(timeout_sleep)
-
-            links = set()
-            for el in driver.find_elements(By.TAG_NAME, "a"):
-                try:
-                    href = el.get_attribute("href")
-                    if href and href.startswith("http") and not any(x in href.lower() for x in ["nexdrive", "fast-dl", "vgmlinks", "tinyurl", "t.me"]):
-                        links.add(href)
-                except:
-                    continue
-
-            html = driver.page_source
-            matches = re.findall(r'https?://[^\s"\'<>]+', html)
-            for m in matches:
-                if any(x in m.lower() for x in ["googleusercontent", "video-downloads.googleusercontent"]):
-                    links.add(m)
-
-            for link in links:
-                all_resolved.append({
-                    "show_name": show_name,
-                    "season": season,
-                    "episode": sub_episode,
-                    "quality": main_quality,
-                    "size": main_size,
-                    "url": link
-                })
+        for link in resolved_links:
+            all_resolved.append({
+                "show_name": show_name,
+                "season": season,
+                "episode": main_episode,
+                "quality": main_quality,
+                "size": main_size,
+                "url": link
+            })
 
         print(f"[INFO] Resolved in {time.time() - start_resolve:.2f}s")
         return all_resolved
 
     def scrape(self, url, quality_filter=None):
+        """Main scraping function using cloudscraper (no Selenium needed)"""
         start_time = time.time()
-        fast_mode = bool(quality_filter)
 
         if quality_filter:
-            print(f"[INFO] QUALITY MODE: Targeting '{quality_filter}'")
+            print(f"[INFO] Quality filter: {quality_filter}")
 
-        driver = self._create_driver(fast_mode=fast_mode)
         try:
-            html = self._fetch_with_driver(url, driver, fast_mode)
+            html = self._fetch_page(url)
+            if not html:
+                print("[ERROR] Failed to fetch page")
+                return []
+
             short_links = self.get_links(html, url, url)
 
             if not short_links:
@@ -274,7 +225,7 @@ class VegamoviesScraper:
             if short_links:
                 print(f"[INFO] Resolving {len(short_links)} short link(s)...")
                 for item in short_links:
-                    resolved = self._resolve_single(item, driver, is_series, fast_mode=fast_mode)
+                    resolved = self._resolve_single(item, is_series)
                     results.extend(resolved)
 
             unique = {}
@@ -287,8 +238,11 @@ class VegamoviesScraper:
             print(f"[INFO] Scraping completed in {total_time:.2f}s\n")
             return list(unique.values())
 
-        finally:
-            driver.quit()
+        except Exception as e:
+            print(f"[ERROR] Scraping exception: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
 
 def scrape_website(url, quality_filter=None):
