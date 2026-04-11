@@ -80,18 +80,40 @@ class VegamoviesScraper:
         q = re.sub(r'\s+', ' ', q).strip()
         return q
 
-    def _fetch_page(self, url):
-        """Fetch page using cloudscraper or requests (no Selenium needed)"""
-        print("[INFO] Loading VegaMovies page...")
+    def _fetch_page(self, url, driver=None):
+        """Fetch page using Selenium driver with scrolling to load all content"""
+        if driver is None:
+            # Fallback to CloudScraper if no driver available
+            print("[INFO] Loading VegaMovies page (CloudScraper fallback)...")
+            start = time.time()
+            try:
+                response = self.scraper.get(url, timeout=30)
+                response.raise_for_status()
+                elapsed = time.time() - start
+                print(f"[INFO] Page loaded in {elapsed:.2f}s")
+                return response.text
+            except Exception as e:
+                print(f"[ERROR] Failed to fetch page: {e}")
+                return None
+        
+        # Use Selenium with scrolling for better link loading
+        print("[INFO] Loading VegaMovies page with Selenium (scrolling)...")
         start = time.time()
         try:
-            response = self.scraper.get(url, timeout=30)
-            response.raise_for_status()
+            driver.get(url)
+            
+            # Scroll to load all lazy-loaded content
+            for _ in range(3):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(0.15)
+            
+            time.sleep(0.5)
+            html = driver.page_source
             elapsed = time.time() - start
-            print(f"[INFO] Page loaded in {elapsed:.2f}s")
-            return response.text
+            print(f"[INFO] Page loaded in {elapsed:.2f}s with full content")
+            return html
         except Exception as e:
-            print(f"[ERROR] Failed to fetch page: {e}")
+            print(f"[ERROR] Failed to fetch page with Selenium: {e}")
             return None
 
     def get_links(self, html, base, url):
@@ -336,7 +358,7 @@ class VegamoviesScraper:
                 print(f"[WARNING] Selenium driver failed - will use HTTP fallback")
 
         try:
-            html = self._fetch_page(url)
+            html = self._fetch_page(url, driver=self.driver)
             if not html:
                 print("[ERROR] Failed to fetch page")
                 return []
