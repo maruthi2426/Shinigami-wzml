@@ -208,34 +208,7 @@ def hubcloud_handler(link):
     
     if not HUBCLOUD_AVAILABLE or bypass_hubcloud is None:
         raise DirectDownloadLinkException("ERROR: HubCloud scraper module not loaded. Make sure hdhub_scraper.py exists in bot directory")
-
-
-def webscrapper_handler(link, quality_filter=None):
-    """Web scraper for VegaMovies and other websites"""
-    # Attempt to load if not already loaded
-    if not WEBSCRAPPER_AVAILABLE:
-        print(f"[WARNING] Attempting deferred load of WebScrapper")
-        _load_webscrapper_module()
     
-    if not WEBSCRAPPER_AVAILABLE or scrape_website is None:
-        raise DirectDownloadLinkException("ERROR: WebScrapper module not loaded. Make sure webscrapper.py exists in bot directory")
-    
-    try:
-        print(f"[INFO] Starting web scrape for: {link}")
-        results = scrape_website(link, quality_filter)
-        
-        if not results:
-            raise DirectDownloadLinkException("ERROR: No direct download links found from scraper")
-        
-        # Return the first/best result or all results
-        if len(results) == 1:
-            return results[0]["url"]
-        else:
-            # Return list of URLs for batch processing
-            return [r["url"] for r in results]
-    
-    except Exception as e:
-        raise DirectDownloadLinkException(f"ERROR: WebScrapper - {str(e)}")
     try:
         import requests as req_module
         session = req_module.Session()
@@ -264,6 +237,34 @@ def webscrapper_handler(link, quality_filter=None):
     
     except Exception as e:
         raise DirectDownloadLinkException(f"ERROR: HubCloud - {str(e)}")
+
+
+def webscrapper_handler(link, quality_filter=None):
+    """Web scraper for VegaMovies and other websites"""
+    # Attempt to load if not already loaded
+    if not WEBSCRAPPER_AVAILABLE:
+        print(f"[WARNING] Attempting deferred load of WebScrapper")
+        _load_webscrapper_module()
+    
+    if not WEBSCRAPPER_AVAILABLE or scrape_website is None:
+        raise DirectDownloadLinkException("ERROR: WebScrapper module not loaded. Make sure webscrapper.py exists in bot directory")
+    
+    try:
+        print(f"[INFO] Starting web scrape for: {link}")
+        results = scrape_website(link, quality_filter)
+        
+        if not results:
+            raise DirectDownloadLinkException("ERROR: No direct download links found from scraper")
+        
+        # Return the first/best result or all results
+        if len(results) == 1:
+            return results[0]["url"]
+        else:
+            # Return list of URLs for batch processing
+            return [r["url"] for r in results]
+    
+    except Exception as e:
+        raise DirectDownloadLinkException(f"ERROR: WebScrapper - {str(e)}")
 
 
 debrid_link_supported_sites = [
@@ -383,7 +384,7 @@ debrid_link_supported_sites = [
 ]
 
 
-def direct_link_generator(link):
+def direct_link_generator(link, quality_filter=None):
     """direct links generator"""
     domain = urlparse(link).hostname
     if not domain:
@@ -393,7 +394,7 @@ def direct_link_generator(link):
     elif any(x in domain for x in ["hubcloud.foo", "hubcloud.one", "hubcloud.cc", "hubcloud.net"]):
         return hubcloud_handler(link)
     elif "vegamovies" in domain:
-        return webscrapper_handler(link)
+        return webscrapper_handler(link, quality_filter)
     elif Config.DEBRID_LINK_API and any(
         x in domain for x in debrid_link_supported_sites
     ):
