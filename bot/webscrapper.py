@@ -6,16 +6,24 @@ Features: Quality filtering, Series/Movie detection, Direct link extraction
 
 import re
 import time
+import requests
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-from webdriver_manager.chrome import ChromeDriverManager
+
+# Try to import Selenium for advanced JavaScript-heavy sites
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.common.exceptions import TimeoutException
+    from webdriver_manager.chrome import ChromeDriverManager
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    print("[WARNING] Selenium not available, using requests fallback")
+    SELENIUM_AVAILABLE = False
 
 
 class VegaMoviesScraper:
@@ -27,32 +35,36 @@ class VegaMoviesScraper:
     
     def _create_driver(self):
         """Create optimized Chrome driver for scraping"""
-        options = Options()
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-setuid-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--disable-extensions")
-        options.add_argument("--disable-infobars")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--blink-settings=imagesEnabled=false")
-        options.add_argument("--disable-features=Translate,OptimizationHints,MediaRouter")
-        options.add_argument("--disable-background-networking")
-        options.add_argument("--disable-background-timer-throttling")
-        options.add_argument("--disable-renderer-backgrounding")
-        options.add_argument("--disable-breakpad")
-        options.add_argument("--log-level=3")
-        options.page_load_strategy = "eager"
-        
-        options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-        options.add_experimental_option("useAutomationExtension", False)
-        options.add_experimental_option("prefs", {
-            "profile.managed_default_content_settings.images": 2,
-            "profile.default_content_setting_values.notifications": 2,
-        })
+        if not SELENIUM_AVAILABLE:
+            print("[WARNING] Selenium not available, cannot create driver")
+            return None
         
         try:
+            options = Options()
+            options.add_argument("--headless=new")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-setuid-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--disable-extensions")
+            options.add_argument("--disable-infobars")
+            options.add_argument("--disable-blink-features=AutomationControlled")
+            options.add_argument("--blink-settings=imagesEnabled=false")
+            options.add_argument("--disable-features=Translate,OptimizationHints,MediaRouter")
+            options.add_argument("--disable-background-networking")
+            options.add_argument("--disable-background-timer-throttling")
+            options.add_argument("--disable-renderer-backgrounding")
+            options.add_argument("--disable-breakpad")
+            options.add_argument("--log-level=3")
+            options.page_load_strategy = "eager"
+            
+            options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+            options.add_experimental_option("useAutomationExtension", False)
+            options.add_experimental_option("prefs", {
+                "profile.managed_default_content_settings.images": 2,
+                "profile.default_content_setting_values.notifications": 2,
+            })
+            
             return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         except Exception as e:
             print(f"[ERROR] Failed to create Chrome driver: {e}")
@@ -251,14 +263,30 @@ class VegaMoviesScraper:
         results = []
         
         try:
-            driver = self._create_driver()
-            if not driver:
-                print("[ERROR] Failed to initialize driver")
-                return []
+            # Try Selenium first if available, otherwise use requests fallback
+            if SELENIUM_AVAILABLE:
+                driver = self._create_driver()
             
-            # Fetch and parse page
-            html = self._fetch_page(url, driver)
+            if driver:
+                # Fetch and parse page with Selenium
+                html = self._fetch_page(url, driver)
+            else:
+                # Fallback to simple requests
+                print("[INFO] Using requests fallback for page fetch...")
+                try:
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                    response = requests.get(url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    html = response.text
+                    print(f"[INFO] Page fetched successfully using requests ({len(html)} bytes)")
+                except Exception as e:
+                    print(f"[ERROR] Failed to fetch page with requests: {e}")
+                    return []
+            
             if not html:
+                print("[ERROR] Failed to fetch page content")
                 return []
             
             links_data = self._extract_links_from_html(html, url)

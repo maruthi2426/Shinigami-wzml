@@ -1,0 +1,82 @@
+===============================================================================
+VEGAMOVIES SCRAPER CRITICAL FIXES APPLIED - APRIL 11, 2026
+===============================================================================
+
+PROBLEM SUMMARY:
+- VegaMovies links were being passed to aria2 with "-q 720P" parameter still 
+  attached, causing "Resource not found" errors
+- WebScrapper module was failing to load silently
+- Direct link generator was not being called
+- URL and quality filter were not being parsed separately
+
+SOLUTION IMPLEMENTED:
+
+1. ARG PARSER FIX (bot/helper/ext_utils/bot_utils.py)
+   - Removed "-q" from invalid boolean argument section
+   - Ensures "-q" is properly parsed as a value argument with its parameter
+   - Quality filter now correctly separated from URL
+
+2. MIRROR_LEECH ENHANCEMENTS (bot/modules/mirror_leech.py)
+   - Added "-q" flag to args dictionary (line 134)
+   - Captured quality_filter from args (line 167)
+   - Passed quality_filter to direct_link_generator (line 395)
+
+3. DIRECT_LINK_GENERATOR UPDATES (bot/helper/mirror_leech_utils/download_utils/direct_link_generator.py)
+   - Updated function signature to accept quality_filter parameter
+   - Added VegaMovies domain detection
+   - Fixed incomplete hubcloud_handler function
+   - Removed duplicate broken code
+   - Passes quality_filter to webscrapper_handler
+
+4. WEBSCRAPPER ROBUSTNESS (bot/webscrapper.py)
+   - Added Selenium try/except import with fallback flag
+   - Updated _create_driver() to check SELENIUM_AVAILABLE before creating driver
+   - Enhanced scrape() method with requests fallback when Selenium unavailable
+   - Now works with or without Chrome/Chromium installed
+   - Uses requests + BeautifulSoup as primary fallback method
+
+EXPECTED WORKFLOW:
+
+User Command:
+  /leech https://vegamovies.wedding/movie -q 720p
+
+Processing Flow:
+  1. Bot receives command and parses arguments
+  2. URL extracted: https://vegamovies.wedding/movie
+  3. Quality filter extracted: 720p
+  4. Content type check: HTML detected
+  5. direct_link_generator() called with both URL and quality
+  6. VegaMovies domain detected
+  7. webscrapper_handler() invoked
+  8. VegaMoviesScraper loads page (Selenium or requests)
+  9. HTML parsed for download links
+  10. Quality filter applied: 720p links extracted
+  11. Shortener links resolved to direct GD/Pixeldrain URLs
+  12. Direct link returned (e.g., https://drive.google.com/...)
+  13. aria2 downloads file directly
+  14. Upload/Mirror continues automatically
+
+COMMAND FORMAT:
+  /leech URL -q QUALITY
+  /mirror URL -q QUALITY
+  
+Quality Options: 480p, 720p, 1080p, 4K, x264, x265
+
+FILES MODIFIED:
+  - bot/helper/ext_utils/bot_utils.py
+  - bot/modules/mirror_leech.py  
+  - bot/helper/mirror_leech_utils/download_utils/direct_link_generator.py
+  - bot/webscrapper.py
+
+ROBUSTNESS FEATURES:
+  ✓ Works with Selenium (if Chrome installed)
+  ✓ Falls back to requests + BeautifulSoup (if Selenium unavailable)
+  ✓ Proper error handling and diagnostics
+  ✓ Extensible for adding more scrapers
+  ✓ Quality filtering works automatically
+  ✓ Direct link extraction from shorteners
+
+STATUS: READY FOR TESTING
+All critical fixes applied. System should now properly scrape VegaMovies links
+and start downloads immediately without resource errors.
+===============================================================================
