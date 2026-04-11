@@ -1,21 +1,20 @@
 """
-Advanced Web Scraper for Multiple Movie/Series Websites
-Supports: VegaMovies, and more (extensible framework)
-Features: Quality filtering, Series/Movie detection, Direct link extraction
+Advanced Web Scraper for VegaMovies
+Uses Selenium to load pages with JavaScript rendering
+Extracts download links and resolves shortener URLs to direct Google Drive links
 """
 
 import re
 import time
 import requests
-from urllib.parse import urljoin
+from urllib.parse import urljoin, parse_qs, urlparse
 
-# Handle BeautifulSoup imports with fallback parser
+# Handle BeautifulSoup imports
 try:
     from bs4 import BeautifulSoup
-    BEAUTIFULSOUP_AVAILABLE = True
 except ImportError:
     print("[ERROR] BeautifulSoup4 not installed")
-    BEAUTIFULSOUP_AVAILABLE = False
+    BeautifulSoup = None
 
 # Try to use lxml parser, fallback to html.parser
 try:
@@ -24,7 +23,7 @@ try:
 except ImportError:
     PARSER = "html.parser"
 
-# Try to import Selenium for advanced JavaScript-heavy sites
+# Try to import Selenium for JavaScript-heavy sites
 try:
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
@@ -36,21 +35,23 @@ try:
     from webdriver_manager.chrome import ChromeDriverManager
     SELENIUM_AVAILABLE = True
 except ImportError:
-    print("[WARNING] Selenium not available, using requests fallback")
+    print("[WARNING] Selenium not available")
     SELENIUM_AVAILABLE = False
 
 
 class VegaMoviesScraper:
-    """VegaMovies website scraper with advanced link extraction"""
+    """VegaMovies website scraper with Selenium-based link extraction"""
     
     def __init__(self):
         self.name = "VegaMovies"
-        print(f"[INFO] {self.name} Scraper Initialized (Advanced Mode)")
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
     
     def _create_driver(self):
         """Create optimized Chrome driver for scraping"""
         if not SELENIUM_AVAILABLE:
-            print("[WARNING] Selenium not available, cannot create driver")
             return None
         
         try:
@@ -65,205 +66,54 @@ class VegaMoviesScraper:
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_argument("--blink-settings=imagesEnabled=false")
             options.add_argument("--disable-features=Translate,OptimizationHints,MediaRouter")
-            options.add_argument("--disable-background-networking")
-            options.add_argument("--disable-background-timer-throttling")
-            options.add_argument("--disable-renderer-backgrounding")
-            options.add_argument("--disable-breakpad")
             options.add_argument("--log-level=3")
             options.page_load_strategy = "eager"
             
             options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
             options.add_experimental_option("useAutomationExtension", False)
-            options.add_experimental_option("prefs", {
-                "profile.managed_default_content_settings.images": 2,
-                "profile.default_content_setting_values.notifications": 2,
-            })
             
             return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
         except Exception as e:
             print(f"[ERROR] Failed to create Chrome driver: {e}")
             return None
     
-    def _extract_episode(self, text: str, url_slug: str = "") -> str:
-        """Extract episode number from text or URL"""
-        if url_slug:
-            slug_match = re.search(r'ep[-_]0*(\d{1,3})', url_slug.lower())
-            if slug_match:
-                return f"EP{slug_match.group(1).zfill(2)}"
-        
-        if text:
-            combined = text.lower()
-            patterns = [
-                r'ep[-_:\s]*0*(\d{1,3})',
-                r'episode[-_:\s]*0*(\d{1,3})',
-                r'eps[-_:\s]*0*(\d{1,3})',
-                r'e(\d{2,3})\b',
-                r's\d+e(\d{1,3})',
-                r'(?:ep|episode|eps)\s*(\d{1,3})',
-            ]
-            for pattern in patterns:
-                match = re.search(pattern, combined)
-                if match:
-                    num = match.group(1)
-                    return f"EP{num.zfill(2)}"
-        
-        return "EP01"
-    
-    def _normalize_quality(self, q: str) -> str:
-        """Normalize quality string"""
-        if not q or q == "unknown":
-            return "unknown"
-        
-        q = q.upper()
-        q = q.replace("HEVC X265", "x265").replace("X265", "x265")
-        q = q.replace("X264", "x264")
-        q = re.sub(r'\s+', ' ', q).strip()
-        
-        return q
-    
-    def _fetch_page(self, url: str, driver) -> str:
-        """Fetch and load page content"""
-        if not driver:
-            return ""
-        
+    def _resolve_shortener(self, short_url: str) -> str:
+        """Resolve shortener link to direct Google Drive URL"""
         try:
-            print(f"[INFO] Loading page: {url[:80]}...")
-            start = time.time()
-            driver.get(url)
+            # Try HEAD first (faster)
+            try:
+                response = self.session.head(short_url, allow_redirects=True, timeout=10)
+                if response.status_code == 200 or response.url != short_url:
+                    return response.url
+            except:
+                pass
             
-            # Scroll to load all content
-            for _ in range(2):
-                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(0.15)
-            
-            time.sleep(0.5)
-            html = driver.page_source
-            print(f"[SUCCESS] Page loaded in {time.time() - start:.2f}s")
-            return html
+            # Fallback to GET
+            response = self.session.get(short_url, allow_redirects=True, timeout=10, stream=True)
+            return response.url if response.status_code == 200 else None
         except Exception as e:
-            print(f"[ERROR] Failed to load page: {e}")
-            return ""
+            print(f"[ERROR] Failed to resolve shortener {short_url}: {e}")
+            return None
     
-    def _extract_links_from_html(self, html: str, base_url: str) -> dict:
-        """Extract all download links from HTML"""
-        soup = BeautifulSoup(html, PARSER)
-        
-        # Extract title and metadata
-        title_tag = soup.find("title")
-        raw_title = title_tag.get_text(strip=True) if title_tag else "Unknown"
-        clean_title = re.sub(r'\s*\|\s*Vegamovies.*$', '', raw_title, flags=re.I).strip()
-        clean_title = re.sub(r'^Download\s+', '', clean_title, flags=re.I).strip()
-        clean_title = re.sub(r'\s*\(\d{4}\s*-\s*\d{4}\)?', '', clean_title).strip()
-        clean_title = re.sub(r'\s+', ' ', clean_title)
-        
-        show_name = re.sub(r'\s*Season\s*\d+.*|EP.*Added.*', '', clean_title, flags=re.I).strip()
-        
-        season_match = re.search(r'Season\s*0*(\d+)', clean_title, re.I)
-        season = season_match.group(1).zfill(2) if season_match else "01"
-        
-        is_series = any(k in base_url.lower() for k in ["season", "ep-", "episode", "s0", "s1", "s2"])
-        
-        print(f"[INFO] Title: {show_name} | Season: S{season} | Type: {'SERIES' if is_series else 'MOVIE'}")
-        
-        links = {
-            "title": show_name,
-            "season": season,
-            "is_series": is_series,
-            "downloads": []
+    def _extract_quality_from_text(self, text: str) -> str:
+        """Extract quality info from text"""
+        quality_patterns = {
+            '4K': ['4k', '2160p'],
+            '1080p': ['1080p', '1080'],
+            '720p': ['720p', '720'],
+            '480p': ['480p', '480'],
         }
         
-        current_quality = "unknown"
-        current_size = "unknown"
-        
-        for element in soup.find_all(['h1', 'h2', 'h3', 'h4', 'strong', 'div', 'p', 'span', 'a']):
-            text = element.get_text(" ", strip=True)
-            
-            # Check for quality indicators
-            quality_match = re.search(r'(480p|720p|1080p|4k|2160p)\s*(?:x264|x265|HEVC)?', text, re.I)
-            if quality_match:
-                current_quality = self._normalize_quality(quality_match.group(0))
-                size_match = re.search(r'(\d+\.?\d*)\s*(GB|MB)', text, re.I)
-                if size_match:
-                    current_size = size_match.group(0).upper()
-                continue
-            
-            # Extract download links
-            if element.name == "a" and element.has_attr("href"):
-                href = urljoin(base_url, element["href"])
-                link_text = element.get_text(" ", strip=True)
-                
-                if any(x in href.lower() for x in ["nexdrive", "fast-dl.org"]):
-                    episode = self._extract_episode(link_text, href)
-                    
-                    links["downloads"].append({
-                        "short_url": href,
-                        "quality": current_quality,
-                        "size": current_size,
-                        "episode": episode,
-                        "resolved": False,
-                        "direct_links": []
-                    })
-        
-        print(f"[INFO] Found {len(links['downloads'])} download links")
-        return links
-    
-    def _resolve_shortener(self, short_url: str, driver, is_series: bool) -> list:
-        """Resolve shortener links to direct download URLs"""
-        if not driver:
-            return []
-        
-        direct_links = []
-        
-        try:
-            print(f"[INFO] Resolving shortener: {short_url[:60]}...")
-            driver.get(short_url)
-            time.sleep(0.1)
-            
-            # Look for verify button and click it
-            try:
-                verify_btn = WebDriverWait(driver, 2).until(
-                    EC.element_to_be_clickable((
-                        By.XPATH,
-                        "//button[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'verify')] | "
-                        "//a[contains(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'verify')]"
-                    ))
-                )
-                driver.execute_script("arguments[0].click();", verify_btn)
-                time.sleep(0.8)
-            except TimeoutException:
-                time.sleep(1.0)
-            
-            # Extract direct download links
-            links = set()
-            
-            # Get links from href attributes
-            for el in driver.find_elements(By.TAG_NAME, "a"):
-                try:
-                    href = el.get_attribute("href")
-                    if href and href.startswith("http"):
-                        if not any(x in href.lower() for x in ["nexdrive", "fast-dl", "vgmlinks", "tinyurl", "t.me"]):
-                            links.add(href)
-                except:
-                    continue
-            
-            # Get links from page source (google drive etc)
-            html = driver.page_source
-            matches = re.findall(r'https?://[^\s"\'<>]+', html)
-            for m in matches:
-                if any(x in m.lower() for x in ["googleusercontent", "video-downloads.googleusercontent", "drive.google"]):
-                    links.add(m)
-            
-            direct_links = list(links)
-            print(f"[SUCCESS] Resolved {len(direct_links)} direct links")
-        
-        except Exception as e:
-            print(f"[ERROR] Failed to resolve shortener: {e}")
-        
-        return direct_links
+        text_lower = text.lower()
+        for quality, patterns in quality_patterns.items():
+            for pattern in patterns:
+                if pattern in text_lower:
+                    return quality
+        return "unknown"
     
     def scrape(self, url: str, quality_filter: str = None) -> list:
         """
-        Main scraping function
+        Main scraping function for VegaMovies
         
         Args:
             url: VegaMovies URL to scrape
@@ -272,88 +122,107 @@ class VegaMoviesScraper:
         Returns:
             List of direct download links with metadata
         """
-        start_time = time.time()
+        print(f"\n[INFO] Starting VegaMovies scrape for: {url}")
+        if quality_filter:
+            print(f"[INFO] Quality filter: {quality_filter}")
+        
         driver = None
         results = []
         
         try:
-            # Try Selenium first if available, otherwise use requests fallback
-            if SELENIUM_AVAILABLE:
-                driver = self._create_driver()
-            
-            if driver:
-                # Fetch and parse page with Selenium
-                html = self._fetch_page(url, driver)
-            else:
-                # Fallback to simple requests
-                print("[INFO] Using requests fallback for page fetch...")
-                try:
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
-                    response = requests.get(url, headers=headers, timeout=10)
-                    response.raise_for_status()
-                    html = response.text
-                    print(f"[INFO] Page fetched successfully using requests ({len(html)} bytes)")
-                except Exception as e:
-                    print(f"[ERROR] Failed to fetch page with requests: {e}")
-                    return []
-            
-            if not html:
-                print("[ERROR] Failed to fetch page content")
+            # Create and use Selenium driver
+            driver = self._create_driver()
+            if not driver:
+                print("[ERROR] Failed to create Chrome driver")
                 return []
             
-            links_data = self._extract_links_from_html(html, url)
+            print("[INFO] Loading page with Selenium...")
+            driver.get(url)
             
-            # Apply quality filter if provided
-            if quality_filter:
-                norm_quality = self._normalize_quality(quality_filter)
-                links_data["downloads"] = [
-                    l for l in links_data["downloads"]
-                    if self._normalize_quality(l.get("quality", "unknown")) == norm_quality
+            # Wait for page to load
+            time.sleep(3)
+            
+            # Get page source
+            page_source = driver.page_source
+            
+            if not page_source:
+                print("[ERROR] Failed to get page source")
+                return []
+            
+            print("[INFO] Page loaded, parsing HTML...")
+            
+            # Parse HTML
+            if BeautifulSoup is None:
+                print("[ERROR] BeautifulSoup not available")
+                return []
+            
+            soup = BeautifulSoup(page_source, PARSER)
+            
+            # Extract download links
+            links = []
+            
+            # Look for download buttons and links
+            for link in soup.find_all('a', href=True):
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
+                
+                if not href or not text:
+                    continue
+                
+                # Filter for shortener and download links
+                shortener_keywords = [
+                    'bit.ly', 'tinyurl', 'short.link', 'is.gd', 'ow.ly',
+                    'nexdrive', 'droplink', 'mpx.sh', 'link.workers.dev'
                 ]
-                if not links_data["downloads"]:
-                    print(f"[WARNING] No links found for quality: {quality_filter}")
-                    return []
-                print(f"[INFO] Quality filter applied: {quality_filter}")
-            
-            # Resolve shortener links to direct downloads
-            print(f"[INFO] Resolving {len(links_data['downloads'])} shortener link(s)...")
-            
-            for idx, link_info in enumerate(links_data["downloads"], 1):
-                print(f"[INFO] Processing [{idx}/{len(links_data['downloads'])}] {link_info['quality']} {link_info['episode']}")
                 
-                direct_links = self._resolve_shortener(link_info["short_url"], driver, links_data["is_series"])
+                is_shortener = any(kw in href.lower() for kw in shortener_keywords)
+                is_download = any(kw in text.lower() for kw in ['download', 'get', 'dl', 'gdrive'])
                 
-                for direct_url in direct_links:
-                    results.append({
-                        "title": links_data["title"],
-                        "season": links_data["season"],
-                        "episode": link_info["episode"],
-                        "quality": link_info["quality"],
-                        "size": link_info["size"],
-                        "url": direct_url
+                if (is_shortener or is_download) and href.startswith('http'):
+                    links.append({
+                        'url': href,
+                        'text': text
                     })
+                    print(f"[DEBUG] Found link: {text[:50]}... -> {href[:80]}...")
             
-            # Remove duplicates
-            unique_results = {}
-            for r in results:
-                key = (r["url"], r["episode"], r["quality"])
-                if key not in unique_results:
-                    unique_results[key] = r
+            print(f"[INFO] Found {len(links)} download links")
             
-            results = list(unique_results.values())
-            total_time = time.time() - start_time
+            if not links:
+                print("[WARNING] No download links found on page")
+                return []
             
-            print(f"[SUCCESS] Scraping completed in {total_time:.2f}s - Found {len(results)} direct links")
+            # Resolve shortener links and filter by quality
+            print("[INFO] Resolving shortener links...")
+            for link in links:
+                short_url = link['url']
+                text = link['text']
+                
+                # Extract quality from text
+                quality = self._extract_quality_from_text(text)
+                
+                # Check quality filter
+                if quality_filter:
+                    quality_filter_lower = quality_filter.lower()
+                    if quality_filter_lower not in text.lower() and quality_filter_lower not in quality.lower():
+                        continue
+                
+                # Resolve shortener
+                direct_url = self._resolve_shortener(short_url)
+                if direct_url and 'google' in direct_url.lower():
+                    results.append({
+                        'url': direct_url,
+                        'quality': quality,
+                        'name': text[:100],
+                        'source': 'vegamovies'
+                    })
+                    print(f"[INFO] Resolved: {text[:50]} -> {direct_url[:80]}...")
             
-            return results
-        
+            print(f"[INFO] Total results after filtering: {len(results)}")
+            
         except Exception as e:
-            print(f"[ERROR] Scraping failed: {e}")
+            print(f"[ERROR] Scraping error: {type(e).__name__}: {str(e)}")
             import traceback
             traceback.print_exc()
-            return []
         
         finally:
             if driver:
@@ -361,76 +230,39 @@ class VegaMoviesScraper:
                     driver.quit()
                 except:
                     pass
+        
+        return results
+
+
+# Global scraper instance
+_vegamovies_scraper = None
+
+def scrape_website(url: str, quality_filter: str = None) -> list:
+    """
+    Scrape VegaMovies website and return direct download links
+    
+    Args:
+        url: VegaMovies URL to scrape
+        quality_filter: Optional quality filter
+    
+    Returns:
+        List of direct download links with metadata
+    """
+    global _vegamovies_scraper
+    
+    if _vegamovies_scraper is None:
+        _vegamovies_scraper = VegaMoviesScraper()
+    
+    # Detect website and route to appropriate scraper
+    if 'vegamovies' in url.lower():
+        return _vegamovies_scraper.scrape(url, quality_filter)
+    else:
+        print(f"[WARNING] Unknown website: {url}")
+        return []
 
 
 def get_scraper_for_url(url: str):
     """Get appropriate scraper for URL"""
-    url_lower = url.lower()
-    
-    if "vegamovies" in url_lower:
+    if 'vegamovies' in url.lower():
         return VegaMoviesScraper()
-    
-    # Add more scrapers here in future
-    # if "example.com" in url_lower:
-    #     return ExampleScraper()
-    
     return None
-
-
-def scrape_website(url: str, quality_filter: str = None) -> list:
-    """
-    Main entry point for web scraping
-    
-    Args:
-        url: Website URL to scrape
-        quality_filter: Optional quality filter
-    
-    Returns:
-        List of direct download links
-    """
-    print(f"\n[INFO] ========== WEB SCRAPER INITIATED ==========")
-    print(f"[INFO] URL: {url}")
-    if quality_filter:
-        print(f"[INFO] Quality Filter: {quality_filter}")
-    print(f"[INFO] ============================================\n")
-    
-    scraper = get_scraper_for_url(url)
-    
-    if not scraper:
-        print(f"[ERROR] No scraper available for URL: {url}")
-        return []
-    
-    try:
-        results = scraper.scrape(url, quality_filter)
-        
-        if results:
-            print(f"\n[INFO] ========== SCRAPING RESULTS ==========")
-            for i, result in enumerate(results, 1):
-                print(f"[{i}] {result['title']} - {result['quality']} - {result['episode']}")
-                print(f"    URL: {result['url'][:80]}...")
-            print(f"[INFO] ========================================\n")
-        
-        return results
-    
-    except Exception as e:
-        print(f"[ERROR] Scraping error: {e}")
-        import traceback
-        traceback.print_exc()
-        return []
-
-
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Advanced Web Scraper")
-    parser.add_argument("-u", "--url", required=True, help="Website URL to scrape")
-    parser.add_argument("-q", "--quality", default=None, help="Quality filter (e.g., 720p, 1080p)")
-    
-    args = parser.parse_args()
-    
-    results = scrape_website(args.url, args.quality)
-    
-    if results:
-        print("\n=== DIRECT DOWNLOAD LINKS ===")
-        for r in results:
-            print(f"{r['url']}")
