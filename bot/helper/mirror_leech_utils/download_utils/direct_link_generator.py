@@ -114,26 +114,44 @@ def _load_webscrapper_module():
     print(f"[DEBUG] File exists: {ospath.exists(webscrapper_path)}")
     
     if not ospath.exists(webscrapper_path):
-        print(f"[WARNING] WebScrapper not found at {webscrapper_path}")
+        print(f"[ERROR] WebScrapper not found at {webscrapper_path}")
         return False
     
     try:
+        print(f"[DEBUG] Creating module spec for webscrapper...")
         spec = importlib.util.spec_from_file_location("webscrapper_module", webscrapper_path)
         if spec is None or spec.loader is None:
             print(f"[ERROR] Failed to create spec for WebScrapper")
             return False
         
+        print(f"[DEBUG] Creating module from spec...")
         webscrapper_module = importlib.util.module_from_spec(spec)
+        
+        print(f"[DEBUG] Executing module...")
         spec.loader.exec_module(webscrapper_module)
         
+        print(f"[DEBUG] Checking for scrape_website function...")
         if not hasattr(webscrapper_module, 'scrape_website'):
             print(f"[ERROR] webscrapper.py does not have scrape_website function")
+            print(f"[DEBUG] Available attributes: {dir(webscrapper_module)}")
             return False
         
         scrape_website = webscrapper_module.scrape_website
         WEBSCRAPPER_AVAILABLE = True
         print(f"[INFO] WebScrapper module loaded successfully")
         return True
+    except SyntaxError as e:
+        print(f"[ERROR] Syntax error in webscrapper.py: {e}")
+        print(f"[ERROR] Line {e.lineno}: {e.text}")
+        import traceback
+        traceback.print_exc()
+        return False
+    except ImportError as e:
+        print(f"[ERROR] Import error in webscrapper.py: {e}")
+        print(f"[ERROR] Make sure all dependencies are installed: requests, beautifulsoup4")
+        import traceback
+        traceback.print_exc()
+        return False
     except Exception as e:
         print(f"[ERROR] Failed to load WebScrapper: {type(e).__name__}: {str(e)}")
         import traceback
@@ -247,23 +265,45 @@ def webscrapper_handler(link, quality_filter=None):
         _load_webscrapper_module()
     
     if not WEBSCRAPPER_AVAILABLE or scrape_website is None:
+        print(f"[ERROR] WEBSCRAPPER_AVAILABLE={WEBSCRAPPER_AVAILABLE}, scrape_website={scrape_website}")
         raise DirectDownloadLinkException("ERROR: WebScrapper module not loaded. Make sure webscrapper.py exists in bot directory")
     
     try:
-        print(f"[INFO] Starting web scrape for: {link}")
+        print(f"\n[INFO] ========== STARTING SCRAPER ==========")
+        print(f"[INFO] Please wait... Scraping links from: {link}")
+        if quality_filter:
+            print(f"[INFO] Quality filter: {quality_filter}")
+        print(f"[INFO] =======================================\n")
+        
         results = scrape_website(link, quality_filter)
         
+        print(f"\n[INFO] ========== SCRAPER COMPLETED ==========")
         if not results:
+            print(f"[ERROR] No direct download links found")
+            print(f"[INFO] ==========================================\n")
             raise DirectDownloadLinkException("ERROR: No direct download links found from scraper")
+        
+        print(f"[INFO] Found {len(results)} link(s)")
+        print(f"[INFO] Preparing for download...")
+        print(f"[INFO] ==========================================\n")
         
         # Return the first/best result or all results
         if len(results) == 1:
-            return results[0]["url"]
+            selected_url = results[0]["url"]
+            print(f"[INFO] Selected link: {selected_url[:100]}...")
+            return selected_url
         else:
             # Return list of URLs for batch processing
-            return [r["url"] for r in results]
+            selected_urls = [r["url"] for r in results]
+            print(f"[INFO] Multiple links available, starting download...")
+            return selected_urls
     
+    except DirectDownloadLinkException:
+        raise
     except Exception as e:
+        print(f"[ERROR] WebScrapper exception: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise DirectDownloadLinkException(f"ERROR: WebScrapper - {str(e)}")
 
 

@@ -8,7 +8,21 @@ import re
 import time
 import requests
 from urllib.parse import urljoin
-from bs4 import BeautifulSoup
+
+# Handle BeautifulSoup imports with fallback parser
+try:
+    from bs4 import BeautifulSoup
+    BEAUTIFULSOUP_AVAILABLE = True
+except ImportError:
+    print("[ERROR] BeautifulSoup4 not installed")
+    BEAUTIFULSOUP_AVAILABLE = False
+
+# Try to use lxml parser, fallback to html.parser
+try:
+    import lxml
+    PARSER = "lxml"
+except ImportError:
+    PARSER = "html.parser"
 
 # Try to import Selenium for advanced JavaScript-heavy sites
 try:
@@ -132,7 +146,7 @@ class VegaMoviesScraper:
     
     def _extract_links_from_html(self, html: str, base_url: str) -> dict:
         """Extract all download links from HTML"""
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, PARSER)
         
         # Extract title and metadata
         title_tag = soup.find("title")

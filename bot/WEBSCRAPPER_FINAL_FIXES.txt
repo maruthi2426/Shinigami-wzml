@@ -1,0 +1,59 @@
+WEBSCRAPPER MODULE - CRITICAL FIXES APPLIED
+=============================================
+
+ISSUES FIXED:
+1. Missing lxml dependency - BeautifulSoup now falls back to html.parser
+2. Insufficient error logging - Added detailed debug output at each loading step
+3. Missing "Please wait" message - Added comprehensive scraper status messages
+4. Silent import failures - Added specific exception handling for syntax/import errors
+
+FILES MODIFIED:
+1. bot/webscrapper.py
+   - Added fallback parser support (lxml -> html.parser)
+   - Added BEAUTIFULSOUP_AVAILABLE flag
+   - Updated BeautifulSoup parsing to use fallback PARSER variable
+   - Lines: 7-26, 149
+
+2. bot/helper/mirror_leech_utils/download_utils/direct_link_generator.py
+   - Added comprehensive debug output in _load_webscrapper_module()
+   - Added SyntaxError and ImportError specific handling
+   - Updated webscrapper_handler with status messages
+   - Added "Please wait..." message during scraping
+   - Lines: 110-160, 263-313
+
+HOW IT WORKS NOW:
+1. User sends: /leech https://vegamovies.wedding/movie -q 720p
+2. Bot parses URL and quality filter
+3. Bot displays: "[INFO] ========== STARTING SCRAPER =========="
+                 "[INFO] Please wait... Scraping links from: URL"
+                 "[INFO] Quality filter: 720p"
+4. Webscrapper module loads with detailed error logging
+5. BeautifulSoup falls back to html.parser if lxml unavailable
+6. Links are scraped and quality-filtered
+7. Bot displays: "[INFO] ========== SCRAPER COMPLETED =========="
+                 "[INFO] Found X link(s)"
+                 "[INFO] Preparing for download..."
+8. Direct link returned to aria2
+9. Download starts immediately
+
+DEBUGGING OUTPUT:
+When webscrapper loads, you'll see:
+[DEBUG] Attempting to load WebScrapper from: /path/to/bot/webscrapper.py
+[DEBUG] File exists: True
+[DEBUG] Creating module spec for webscrapper...
+[DEBUG] Creating module from spec...
+[DEBUG] Executing module...
+[DEBUG] Checking for scrape_website function...
+[INFO] WebScrapper module loaded successfully
+
+If there's an error, you'll see specific details:
+[ERROR] Syntax error in webscrapper.py: Line X
+[ERROR] Import error in webscrapper.py: Missing module X
+[ERROR] Available attributes: [list of functions]
+
+DEPENDENCIES REQUIRED:
+- requests (for HTTP calls)
+- beautifulsoup4 (for HTML parsing)
+- lxml (optional, for faster parsing)
+
+All errors are now visible and debuggable with comprehensive logging at every step.
