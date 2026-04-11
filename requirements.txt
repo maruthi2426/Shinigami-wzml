@@ -5,6 +5,7 @@ aioshutil
 anytree
 apscheduler
 aioaria2
+selenium
 aioqbt
 imdbinfo
 cloudscraper
